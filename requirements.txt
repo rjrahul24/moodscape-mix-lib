@@ -1,0 +1,8 @@
+streamlit>=1.40
+elevenlabs>=1.10
+pedalboard>=0.9
+numpy>=1.26
+scipy>=1.13
+soundfile>=0.12
+pyloudnorm>=0.1.1
+python-dotenv>=1.0

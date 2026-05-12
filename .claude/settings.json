@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:nerdynav.com)",
+      "WebFetch(domain:json2video.com)",
+      "Bash(python -c \"from meditation_mixer import tts; [print\\(v.voice_id, '|', v.label\\) for v in tts.list_voices\\(\\)]\")",
+      "Bash(python3 -c \"from meditation_mixer import tts; [print\\(v.voice_id, '|', v.label\\) for v in tts.list_voices\\(\\)]\")",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(git --version)"
+    ]
+  }
+}

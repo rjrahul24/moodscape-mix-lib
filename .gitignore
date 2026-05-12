@@ -1,0 +1,12 @@
+.env
+.claude/settings.local.json
+backgrounds/*
+!backgrounds/.gitkeep
+outputs/*
+!outputs/.gitkeep
+irs/synthetic_plate_*.wav
+.cache/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
