@@ -49,6 +49,27 @@ class MixSettings:
     duck_release_ms: float = 500.0
     duck_lookahead_ms: float = 10.0
 
+    # Script-aware ducking (deterministic curve from phrase timestamps).
+    # When enabled, builds a predictive descent + held duck + lifted-
+    # pause envelope from voice-phrase boundaries, then combines it with
+    # the reactive detector via np.minimum so off-script audio still gets
+    # ducked. This is the move that makes the music feel like it's
+    # "breathing" with the voice.
+    use_script_aware_duck: bool = True
+    duck_pre_descent_ms: float = 300.0
+    duck_attack_ramp_ms: float = 250.0
+    duck_lift_db: float = 1.5
+    duck_lift_pause_s: float = 1.5
+
+    # Static "carved pocket" on the music. A gentle dip in the speech-
+    # intelligibility band (~2 kHz, Q 0.7) lets the dynamic ducker move
+    # less aggressively while voice still cuts through cleanly. Static
+    # because the carving never needs to move — it's the speech band
+    # that always wants room.
+    music_pocket_db: float = -2.0
+    music_pocket_freq_hz: float = 2000.0
+    music_pocket_q: float = 0.7
+
     # Arrangement
     pre_roll_s: float = 3.0
     post_roll_s: float = 5.0
@@ -62,6 +83,13 @@ class MixSettings:
     presence_db: float = 2.0
     air_db: float = 1.5
     mud_cut_db: float = -2.5
+
+    # Reverb ducking — attenuate the voice's wet send while the voice is
+    # speaking (so consonants stay clear) and LIFT it during long pauses
+    # so the tail blooms into the silence. The +lift produces the
+    # "spacious room" cue characteristic of Headspace/Calm production.
+    reverb_duck_db: float = -6.0
+    reverb_lift_db: float = 4.0
 
     # Stereo width on the music bed
     music_width: float = 1.15
@@ -87,12 +115,28 @@ def _voice_chain(settings: MixSettings) -> Pedalboard:
     ])
 
 
-def _bg_chain(gain_db: float) -> Pedalboard:
-    return Pedalboard([
-        LowpassFilter(cutoff_frequency_hz=12000.0),
-        Compressor(threshold_db=-20.0, ratio=2.0, attack_ms=20.0, release_ms=400.0),
-        Gain(gain_db=gain_db),
-    ])
+def _bg_chain(
+    gain_db: float,
+    pocket_freq_hz: float,
+    pocket_gain_db: float,
+    pocket_q: float,
+) -> Pedalboard:
+    """Music processing chain. The PeakFilter dip near 2 kHz pre-carves a
+    static "pocket" in the speech-intelligibility band so dynamic ducking
+    can be gentler. If `pocket_gain_db` is 0, the filter is a no-op.
+    """
+    stages: list = [LowpassFilter(cutoff_frequency_hz=12000.0)]
+    if abs(pocket_gain_db) > 0.05:
+        stages.append(PeakFilter(
+            cutoff_frequency_hz=pocket_freq_hz,
+            gain_db=pocket_gain_db,
+            q=pocket_q,
+        ))
+    stages.append(
+        Compressor(threshold_db=-20.0, ratio=2.0, attack_ms=20.0, release_ms=400.0)
+    )
+    stages.append(Gain(gain_db=gain_db))
+    return Pedalboard(stages)
 
 
 def _master_chain() -> Pedalboard:
@@ -129,10 +173,19 @@ def render(
     settings: MixSettings,
     output_path: Path,
     output_format: str = "wav",
+    speech_segments: list[tuple[float, float]] | None = None,
 ) -> dict:
     """Run the full mix and write to disk. Returns a render manifest dict.
 
     voice: 1D mono float32 in [-1, 1] at `sr`.
+
+    `speech_segments`: optional list of (start_s, end_s) phrase
+    boundaries IN THE INPUT VOICE TIMELINE (before pre-roll). Comes from
+    `tts.synthesize_script(...)`'s manifest. Used to drive the script-
+    aware ducking curve when `settings.use_script_aware_duck` is True.
+    If omitted, the script-aware duck falls back to envelope-based
+    phrase detection on the rendered voice — slightly less precise but
+    still much better than reactive-only.
     """
     if voice.ndim != 1:
         voice = _to_mono(voice)
@@ -141,6 +194,16 @@ def render(
     # 1. Pad voice with pre/post-roll silence.
     voice_padded = arrange.pad_voice(voice, sr, settings.pre_roll_s, settings.post_roll_s)
     target_n = voice_padded.shape[0]
+
+    # Shift the provided speech-segment timestamps into the padded
+    # timeline so all downstream curves share one frame of reference.
+    if speech_segments:
+        shifted_segments = [
+            (s + settings.pre_roll_s, e + settings.pre_roll_s)
+            for (s, e) in speech_segments
+        ]
+    else:
+        shifted_segments = None
 
     # 2. Load + fit background to total length. Handles every combination:
     #    bg longer  → trimmed (master fade-out covers the cut)
@@ -164,17 +227,23 @@ def render(
     # 4. De-ess after compression so sibilance is loud relative to body.
     voice_mono = deess.deess(voice_mono, sr)
 
-    # 5. Convolution reverb send (dry + wet stereo).
-    voice_stereo = reverb.convolution_reverb(
+    # 5. Convolution reverb. Split dry from wet so the wet send can be
+    # ducked independently of the music duck below.
+    dry_stereo, wet_stereo = reverb.convolution_reverb_split(
         voice_mono, sr,
         ir_path=settings.reverb_ir_path,
-        wet_db=settings.reverb_wet_db,
         pre_delay_ms=settings.reverb_pre_delay_ms,
         ir_hpf_hz=250.0,
     )
 
-    # 6. Background FX + M/S widen.
-    bg_fx = _bg_chain(settings.bg_gain_db)(bg_fit, sr)
+    # 6. Background FX + M/S widen. The PeakFilter in _bg_chain pre-
+    # carves a static pocket in the speech-intelligibility band.
+    bg_fx = _bg_chain(
+        settings.bg_gain_db,
+        pocket_freq_hz=settings.music_pocket_freq_hz,
+        pocket_gain_db=settings.music_pocket_db,
+        pocket_q=settings.music_pocket_q,
+    )(bg_fit, sr)
     bg_fx = _to_stereo(bg_fx)
     bg_fx = mastering.adjust_stereo_width(
         bg_fx,
@@ -182,19 +251,69 @@ def render(
         mid_gain_db=settings.music_mid_db,
     )
 
-    # 7. Frequency-selective sidechain duck (only the 200 Hz - 4 kHz band of
-    # the music ducks, driven by the voice's word-band envelope).
-    n = min(voice_stereo.shape[-1], bg_fx.shape[-1], voice_mono.shape[0])
-    bg_ducked = ducking.freq_selective_duck(
-        bg_fx[..., :n],
-        voice_mono[:n],
-        sr,
-        threshold_db=settings.duck_threshold_db,
-        range_db=settings.duck_range_db,
-        attack_ms=settings.duck_attack_ms,
-        release_ms=settings.duck_release_ms,
-        lookahead_ms=settings.duck_lookahead_ms,
-    )
+    # 7. Ducking. Script-aware deterministic curve if we have phrase
+    # timestamps (or fall back to envelope-based phrase detection on the
+    # voice). Combined with reactive detector via np.minimum so off-
+    # script audio (breaths, mouth noise) still gets ducked.
+    n = min(dry_stereo.shape[-1], bg_fx.shape[-1], voice_mono.shape[0],
+            wet_stereo.shape[-1])
+    if settings.use_script_aware_duck:
+        bg_ducked, gain_curve_db = ducking.script_aware_duck(
+            bg_fx[..., :n],
+            voice_mono[:n],
+            sr,
+            phrases=shifted_segments,
+            pre_descent_ms=settings.duck_pre_descent_ms,
+            attack_ramp_ms=settings.duck_attack_ramp_ms,
+            release_ms=settings.duck_release_ms,
+            duck_db=settings.duck_range_db,
+            lift_db=settings.duck_lift_db,
+            lift_pause_s=settings.duck_lift_pause_s,
+            reactive_threshold_db=settings.duck_threshold_db,
+            reactive_attack_ms=settings.duck_attack_ms,
+            reactive_release_ms=settings.duck_release_ms,
+            reactive_lookahead_ms=settings.duck_lookahead_ms,
+        )
+    else:
+        bg_ducked = ducking.freq_selective_duck(
+            bg_fx[..., :n],
+            voice_mono[:n],
+            sr,
+            threshold_db=settings.duck_threshold_db,
+            range_db=settings.duck_range_db,
+            attack_ms=settings.duck_attack_ms,
+            release_ms=settings.duck_release_ms,
+            lookahead_ms=settings.duck_lookahead_ms,
+        )
+        gain_curve_db = None
+
+    # 7b. Reverb ducking. The wet send rides an INVERSE-ish curve: cut
+    # while voice is speaking (so the dry voice stays clear), lift
+    # during long pauses (so the tail blooms). We re-derive the wet
+    # envelope using a smaller duck depth and a larger positive lift
+    # than the music — small but very characteristic move.
+    if settings.reverb_duck_db < 0.0 or settings.reverb_lift_db > 0.0:
+        wet_gain_db = ducking.script_aware_gain_db(
+            n, sr,
+            phrases=shifted_segments
+            if shifted_segments is not None
+            else ducking.detect_phrases_from_audio(voice_mono[:n], sr),
+            pre_descent_ms=settings.duck_pre_descent_ms,
+            attack_ms=settings.duck_attack_ramp_ms,
+            release_ms=settings.duck_release_ms,
+            duck_db=settings.reverb_duck_db,
+            lift_db=settings.reverb_lift_db,
+            lift_pause_s=settings.duck_lift_pause_s,
+            smooth_hz=8.0,
+        )
+        wet_lin = (10.0 ** (wet_gain_db / 20.0)).astype(np.float32)
+        wet_send_gain = 10.0 ** (settings.reverb_wet_db / 20.0)
+        wet_ducked = wet_stereo[..., :n] * wet_send_gain * wet_lin
+    else:
+        wet_send_gain = 10.0 ** (settings.reverb_wet_db / 20.0)
+        wet_ducked = wet_stereo[..., :n] * wet_send_gain
+
+    voice_stereo = dry_stereo[..., :n] + wet_ducked
 
     # 8. Sum to a stereo pre-master.
     premaster = voice_stereo[..., :n] + bg_ducked[..., :n]

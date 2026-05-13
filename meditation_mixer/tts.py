@@ -23,6 +23,8 @@ speed-ups and artifacts.
 from __future__ import annotations
 
 import io
+import re
+import warnings
 from dataclasses import dataclass
 from typing import Iterable, Literal
 
@@ -47,26 +49,41 @@ SEED_MAX = 4_294_967_295
 # hard-caps at 5000. We aim for 800-1200 with a 4500 ceiling.
 CHUNK_MIN_FOR_RELIABILITY = 250
 
-# Meditation defaults, derived from official v3 docs + the research plan:
-#  - stability 0.50 ("Natural"). >= 0.75 ignores audio tags entirely.
-#  - similarity_boost 0.92 — pushed up because v3 has NO server-side
-#    continuity at all: the API rejects both prev/next_text AND
-#    prev/next_request_ids. The only cross-chunk anchors left are a fixed
-#    seed + similarity_boost, so we squeeze the latter. 0.92 trades a hair
-#    of prosody variation for stronger cross-chunk voice consistency,
-#    which matters more for long meditations.
-#  - style 0.0 — ElevenLabs explicitly recommends 0.0; higher adds caricature.
-#  - speed 0.80 — slow, contemplative cadence. (Range 0.7-1.2 supported.)
-#    0.90 was perceptibly fast for guided meditation; 0.80 lands closer to
-#    Calm/Headspace pacing without sounding sluggish.
-#  - speaker_boost False — v3 ignores it; cleaner config.
+# Meditation defaults, tuned per the production-quality research plan:
+#  - stability 0.55 — slightly above "Natural" (0.50). Audio tags still
+#    respond (the >=0.75 "Robust" threshold ignores them); the extra 0.05
+#    damps prosody jitter on long meditations without flattening tags.
+#  - similarity_boost 0.78 — practitioner consensus is that values above
+#    ~0.80 introduce timbral artifacts (a brittle/zippery character on
+#    sibilants and breaths). 0.78 sits just below that threshold and
+#    delivers cleaner cross-chunk timbre than the previous 0.92 setting,
+#    even without server-side stitching.
+#  - style 0.0 — ElevenLabs explicitly recommends 0.0 for meditation;
+#    higher adds caricature.
+#  - speed 0.88 — mild model-level slowdown, leaving room for a
+#    Rubber Band R3 post-stretch (~1.18x length) to reach the Tamara
+#    Levitt / Andy Puddicombe 95-110 WPM range. v3's `speed` slider is a
+#    weak lever on its own; ElevenLabs' own v3 best-practices doc says
+#    "speed is also controlled through audio tags" and warns that 0.7-0.8
+#    can introduce timbre warble. Splitting slowdown across speed + post-
+#    stretch keeps each stage in its quality-safe band.
+#  - speaker_boost True — slightly improves perceived similarity to the
+#    original voice on long-form content; cost-free.
 MEDITATION_VOICE_SETTINGS = VoiceSettings(
-    stability=0.50,
-    similarity_boost=0.92,
+    stability=0.55,
+    similarity_boost=0.78,
     style=0.0,
-    speed=0.80,
-    use_speaker_boost=False,
+    speed=0.88,
+    use_speaker_boost=True,
 )
+
+
+# Default tone preset prepended to speech chunks that don't already begin
+# with an audio tag. Reasserting calming tags at every chunk boundary is
+# the only continuity tool v3 exposes (no prev/next_text, no request_id
+# stitching), so this is the single biggest fix for "prosody flattens
+# over time" drift on long meditations.
+DEFAULT_TONE_PRESET = "[soft][slowly]"
 
 # Named presets matching ElevenLabs' v3 mode labels.
 STABILITY_PRESETS: dict[str, float] = {
@@ -143,6 +160,103 @@ def _pcm_to_float(pcm: bytes) -> np.ndarray:
     return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+# Detect a leading audio tag run at the start of a chunk. We treat ALL
+# leading bracketed tags as "the user already specified a tone", so we
+# don't double-tag chunks the script-writer was opinionated about.
+_LEADING_TAG_RE = re.compile(r"^\s*(?:\[[^\[\]\n]{1,30}\]\s*){1,4}")
+
+
+def _apply_tone_preset(text: str, tone_preset: str | None) -> str:
+    """Prepend `tone_preset` to a chunk only if it doesn't already start
+    with an audio tag. Cheap continuity anchor for v3 which has no
+    server-side stitching: each chunk gets a fresh tonal nudge.
+    """
+    if not tone_preset:
+        return text
+    preset = tone_preset.strip()
+    if not preset:
+        return text
+    if _LEADING_TAG_RE.match(text):
+        return text  # user already specified tone for this chunk
+    return f"{preset} {text.lstrip()}"
+
+
+def _time_stretch_mono(y: np.ndarray, sr: int, length_factor: float) -> np.ndarray:
+    """Rubber Band R3 time-stretch a mono float32 signal by `length_factor`.
+
+    `length_factor > 1.0` LENGTHENS the audio (slows down) without
+    altering pitch — e.g. 1.18 = 18 % longer. We pass `preserve_formants
+    =True` so the voice timbre stays intact (no chipmunking) and use the
+    long-FFT-window + smooth-transient settings recommended for speech.
+
+    Note: pedalboard's `stretch_factor` is a SPEED multiplier, the
+    inverse of what we want. We invert here so callers think in
+    "length-stretch" units.
+    """
+    if length_factor is None or abs(length_factor - 1.0) < 1e-3:
+        return y
+    if length_factor <= 0:
+        raise ValueError(f"length_factor must be > 0, got {length_factor}")
+
+    # Defer import so callers that don't stretch don't pay the cost.
+    from pedalboard import time_stretch as _ts
+
+    speed_factor = 1.0 / float(length_factor)
+    y32 = y.astype(np.float32, copy=False)
+    stretched = _ts(
+        y32, float(sr),
+        stretch_factor=speed_factor,
+        pitch_shift_in_semitones=0.0,
+        high_quality=True,
+        transient_mode="smooth",        # smoother on sustained vowels
+        transient_detector="compound",
+        retain_phase_continuity=True,
+        use_long_fft_window=True,       # smoother on speech
+        use_time_domain_smoothing=False,
+        preserve_formants=True,         # critical — keeps voice timbre
+    )
+    # pedalboard always returns (channels, samples). Squeeze to 1D.
+    if stretched.ndim == 2:
+        stretched = stretched[0]
+    return stretched.astype(np.float32, copy=False)
+
+
+def _normalize_chunk_lufs(
+    y: np.ndarray, sr: int, target_lufs: float,
+    silence_gate_lufs: float = -50.0,
+) -> np.ndarray:
+    """Per-chunk integrated-loudness normalization. Eliminates the
+    "this paragraph is louder than the next one" drift that v3 produces
+    across long sessions, before crossfading and mixing run.
+
+    Falls back to a passthrough on chunks that are too short for a valid
+    BS.1770 integrated measurement (<400 ms) or that are effectively
+    silent (e.g. a chunk that was almost entirely breath). Both edge cases
+    return the raw chunk so we never amplify near-silence into noise.
+    """
+    if y.size < int(sr * 0.4):
+        return y
+    try:
+        import pyloudnorm as pyln
+    except Exception:
+        return y
+
+    meter = pyln.Meter(sr, filter_class="DeMan")
+    # pyloudnorm wants (samples, channels) for stereo and (samples,) for mono.
+    measured = float(meter.integrated_loudness(y.astype(np.float32)))
+    if not np.isfinite(measured) or measured < silence_gate_lufs:
+        return y
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Possible clipped samples in output.",
+            category=UserWarning,
+            module=r"pyloudnorm\..*",
+        )
+        out = pyln.normalize.loudness(y.astype(np.float32), measured, target_lufs)
+    return out.astype(np.float32, copy=False)
+
+
 # Crossfade length when stitching consecutive TTS chunks (and pause silence)
 # together. ElevenLabs v3 returns each chunk with a few ms of attack/release
 # at the edges plus occasional tiny edge clicks; a short equal-power
@@ -202,6 +316,66 @@ def _stitch_pieces(pieces: list[np.ndarray], sr: int,
         tail = nxt[n:]
         out = np.concatenate([head, cross, tail])
     return out
+
+
+def _stitch_pieces_with_spans(
+    pieces: list[np.ndarray], sr: int,
+    xfade_ms: float = _CHUNK_XFADE_MS,
+) -> tuple[np.ndarray, list[tuple[int, int]]]:
+    """Same as `_stitch_pieces`, but also returns each piece's (start, end)
+    sample span in the stitched output. The span midpoint sits inside the
+    piece's body — crossfade regions belong half to each neighbour, so we
+    record each piece as [body_start, body_end_excl_xfade_into_next].
+
+    Used by `synthesize_script` to surface phrase timestamps for script-
+    aware ducking downstream.
+    """
+    if not pieces:
+        return np.zeros(0, dtype=np.float32), []
+    if len(pieces) == 1:
+        y = pieces[0].astype(np.float32, copy=False)
+        return y, [(0, y.shape[0])]
+
+    xfade_n = max(1, int(sr * xfade_ms / 1000.0))
+    spans: list[tuple[int, int]] = []
+    out = pieces[0].astype(np.float32, copy=True)
+    cursor = out.shape[0]
+    spans.append((0, cursor))  # tentative; we'll trim the tail by xfade as we go
+
+    t = np.linspace(0.0, 1.0, xfade_n, endpoint=False, dtype=np.float32)
+    fade_out_c = np.cos(t * np.pi / 2.0).astype(np.float32)
+    fade_in_c = np.sin(t * np.pi / 2.0).astype(np.float32)
+
+    for nxt in pieces[1:]:
+        nxt = nxt.astype(np.float32, copy=False)
+        n = min(xfade_n, out.shape[0], nxt.shape[0])
+        if n <= 1:
+            start = out.shape[0]
+            out = np.concatenate([out, nxt])
+            spans.append((start, start + nxt.shape[0]))
+            continue
+        if n < xfade_n:
+            tt = np.linspace(0.0, 1.0, n, endpoint=False, dtype=np.float32)
+            fo = np.cos(tt * np.pi / 2.0).astype(np.float32)
+            fi = np.sin(tt * np.pi / 2.0).astype(np.float32)
+        else:
+            fo, fi = fade_out_c, fade_in_c
+
+        head = out[:-n]
+        cross = out[-n:] * fo + nxt[:n] * fi
+        tail = nxt[n:]
+        new_out = np.concatenate([head, cross, tail])
+
+        # The previous piece's body ends where the crossfade starts (out.shape[0] - n).
+        # The new piece's body starts at the END of the crossfade (out.shape[0]).
+        prev_start, _ = spans[-1]
+        spans[-1] = (prev_start, out.shape[0] - n)
+        new_start = out.shape[0]
+        new_end = new_out.shape[0]
+        spans.append((new_start, new_end))
+        out = new_out
+
+    return out, spans
 
 
 def _settings_dict(s: VoiceSettings) -> dict:
@@ -352,19 +526,38 @@ def synthesize_script(
     apply_text_normalization: Literal["auto", "on", "off"] = "auto",
     progress: callable | None = None,
     pause_scale: float = 1.0,
+    tone_preset: str | None = DEFAULT_TONE_PRESET,
+    time_stretch_factor: float = 1.18,
+    normalize_chunk_lufs: float | None = -19.0,
 ) -> tuple[np.ndarray, int, dict]:
     """Render a full meditation script.
 
-    Splits into TTS chunks + programmatic pauses, synthesizes each TTS chunk
-    with continuity hints where the model supports them (prev/next text +
-    prev_request_ids for v2/turbo; v3 has neither and relies on seed +
-    similarity_boost only), concatenates with real silence for `### PAUSE
-    Xs` markers, and returns mono float32 samples.
+    Splits into TTS chunks + programmatic pauses, synthesizes each TTS
+    chunk with continuity hints where the model supports them (prev/next
+    text + prev_request_ids for v2/turbo; v3 has neither and relies on
+    seed + similarity_boost only), then per-chunk runs:
 
-    `pause_scale` is a single knob that scales every `### PAUSE Xs`
-    duration uniformly (1.0 = literal, 1.5 = 50 % more breathing room).
+      1. Tone-tag reassertion — prepend `tone_preset` (default
+         `[soft][slowly]`) to any chunk that doesn't already start with
+         an audio tag. The only continuity anchor v3 exposes is the
+         prompt itself; reasserting tags at every chunk boundary is what
+         keeps a 20-minute meditation from drifting into "audiobook
+         narrator" tone by chunk 8.
+      2. Per-chunk LUFS normalization (if `normalize_chunk_lufs` is
+         not None) — eliminates the cross-chunk loudness drift v3
+         produces under any settings.
+      3. Rubber Band R3 time-stretch (if `time_stretch_factor` > 1.0,
+         default 1.18) — pulls pace from v3's typical ~150 WPM down to
+         the Tamara Levitt / Andy Puddicombe ~95-110 WPM band without
+         pitch artifacts. PauseChunk silences are NOT stretched (their
+         durations are already explicit in the script).
 
-    Returns: (samples, sample_rate, manifest_dict)
+    Pieces are then concatenated with equal-power crossfades.
+
+    Returns: (samples, sample_rate, manifest_dict). Manifest includes
+    `speech_segments` — a list of (start_s, end_s) tuples covering each
+    rendered speech chunk in the final timeline. The mixer uses these for
+    deterministic, script-aware ducking.
     """
     if not script.strip():
         raise ValueError("Cannot synthesize empty script.")
@@ -386,6 +579,9 @@ def synthesize_script(
     ctx = neighbors(parts)
     speech_idx = 0
     pieces: list[np.ndarray] = []
+    # Track (kind, start_sample, end_sample) for each piece so we can
+    # build per-piece timestamps in the stitched output below.
+    piece_kinds: list[str] = []   # "speech" or "pause"
     cache_hits = 0
     cache_misses = 0
     total_chars = 0
@@ -397,16 +593,21 @@ def synthesize_script(
         if isinstance(part, PauseChunk):
             n = int(round(part.seconds * SAMPLE_RATE))
             pieces.append(np.zeros(n, dtype=np.float32))
+            piece_kinds.append("pause")
             if progress:
                 progress(i + 1, len(parts), f"silence {part.seconds:.1f}s")
             continue
 
         prev_t, next_t = ctx[speech_idx]
         speech_idx += 1
-        total_chars += len(part.text)
+        # Apply tone-tag reassertion before the API call so the cache key
+        # reflects the actual rendered text. User-tagged chunks pass
+        # through untouched.
+        rendered_text = _apply_tone_preset(part.text, tone_preset)
+        total_chars += len(rendered_text)
 
         payload = {
-            "text": part.text,
+            "text": rendered_text,
             "voice_id": voice_id,
             "model_id": model_id,
             "voice_settings": _settings_dict(settings),
@@ -425,10 +626,10 @@ def synthesize_script(
         if progress:
             progress(i + 1, len(parts),
                      f"chunk {speech_idx}/{len(speech_chunks)} "
-                     f"({'cached' if is_hit else 'new'}, {len(part.text)} chars)")
+                     f"({'cached' if is_hit else 'new'}, {len(rendered_text)} chars)")
 
         pcm, request_id = _render_one_chunk(
-            text=part.text,
+            text=rendered_text,
             voice_id=voice_id,
             model_id=model_id,
             settings=settings,
@@ -442,13 +643,34 @@ def synthesize_script(
         if request_id:
             recent_request_ids.append(request_id)
             recent_request_ids = recent_request_ids[-3:]
-        pieces.append(_pcm_to_float(pcm))
+
+        y = _pcm_to_float(pcm)
+
+        # Per-chunk normalization BEFORE time-stretch: a clean LUFS
+        # measurement on the un-stretched signal is cheaper and more
+        # stable than measuring after stretching introduces sub-perceptual
+        # artifacts.
+        if normalize_chunk_lufs is not None:
+            y = _normalize_chunk_lufs(y, SAMPLE_RATE, float(normalize_chunk_lufs))
+
+        # Rubber Band R3 lengthening. Cumulative slowdown with the v3
+        # `speed` setting brings ~150 WPM v3 output down to ~110 WPM.
+        if time_stretch_factor and time_stretch_factor > 1.001:
+            y = _time_stretch_mono(y, SAMPLE_RATE, float(time_stretch_factor))
+
+        pieces.append(y)
+        piece_kinds.append("speech")
 
     # Equal-power crossfade between every adjacent piece (speech↔speech,
     # speech↔pause, pause↔speech). Eliminates the boundary clicks/drops
     # that hard concatenation can leave behind, and gives PAUSE markers a
     # smooth fade in/out for free.
-    samples = _stitch_pieces(pieces, SAMPLE_RATE)
+    samples, piece_spans = _stitch_pieces_with_spans(pieces, SAMPLE_RATE)
+    speech_segments: list[tuple[float, float]] = [
+        (s / SAMPLE_RATE, e / SAMPLE_RATE)
+        for kind, (s, e) in zip(piece_kinds, piece_spans)
+        if kind == "speech" and e > s
+    ]
     manifest = {
         "speech_chunks": len(speech_chunks),
         "pause_chunks": len(parts) - len(speech_chunks),
@@ -460,6 +682,13 @@ def synthesize_script(
         "sample_rate": SAMPLE_RATE,
         "duration_s": samples.shape[0] / SAMPLE_RATE,
         "short_chunk_count": len(short_chunks),
+        "tone_preset": tone_preset or "",
+        "time_stretch_factor": float(time_stretch_factor or 1.0),
+        "chunk_lufs_target": (
+            float(normalize_chunk_lufs)
+            if normalize_chunk_lufs is not None else None
+        ),
+        "speech_segments": speech_segments,
         "warnings": (
             [f"{len(short_chunks)} chunk(s) under {CHUNK_MIN_FOR_RELIABILITY} chars — "
              "v3 may produce unstable prosody on these. Consider merging short paragraphs."]

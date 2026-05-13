@@ -145,22 +145,26 @@ def _load_ir(path: Path, sr: int, hpf_hz: float | None = 250.0) -> np.ndarray:
     return ir
 
 
-def convolution_reverb(
+def convolution_reverb_split(
     dry_mono: np.ndarray,
     sr: int,
     ir_path: Path | None = None,
-    wet_db: float = -20.0,
     pre_delay_ms: float = 25.0,
     ir_hpf_hz: float = 250.0,
-) -> np.ndarray:
-    """Wet+dry stereo signal from a mono dry voice convolved with `ir_path`.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (dry_stereo, wet_stereo) separately from a mono dry voice.
 
-    If `ir_path` is None, uses the synthesized default plate IR.
-    Returns (2, N) where N == dry_mono.shape[0] (wet tail is truncated to match
-    dry length; the master fade will handle the cut).
+    Splitting wet from dry lets the mixer apply an independent "reverb
+    duck" — attenuating the wet send while the voice is speaking (so the
+    voice stays clear) and lifting it during pauses (so the reverb tail
+    blooms into the silence). That bloom is the single biggest "spacious
+    room" cue in Headspace/Calm production.
+
+    Both outputs have shape (2, N) where N == dry_mono.shape[0]. The wet
+    tail past N is truncated; the master fade-out covers the cut.
     """
     if dry_mono.ndim != 1:
-        raise ValueError("convolution_reverb expects mono dry signal")
+        raise ValueError("convolution_reverb_split expects mono dry signal")
 
     if ir_path is None:
         ir_path = ensure_default_ir(sr)
@@ -173,7 +177,28 @@ def convolution_reverb(
     wet_l = fftconvolve(dry_mono, ir[0])[: dry_mono.shape[0]]
     wet_r = fftconvolve(dry_mono, ir[1])[: dry_mono.shape[0]]
     wet = np.stack([wet_l, wet_r], axis=0).astype(np.float32)
-
-    wet_gain = 10.0 ** (wet_db / 20.0)
     dry_stereo = np.stack([dry_mono, dry_mono], axis=0).astype(np.float32)
+    return dry_stereo, wet
+
+
+def convolution_reverb(
+    dry_mono: np.ndarray,
+    sr: int,
+    ir_path: Path | None = None,
+    wet_db: float = -20.0,
+    pre_delay_ms: float = 25.0,
+    ir_hpf_hz: float = 250.0,
+) -> np.ndarray:
+    """Wet+dry stereo signal from a mono dry voice convolved with `ir_path`.
+
+    Backward-compatible wrapper. Prefer `convolution_reverb_split` when
+    you need to time-vary the wet level (e.g. reverb ducking).
+    """
+    dry_stereo, wet = convolution_reverb_split(
+        dry_mono, sr,
+        ir_path=ir_path,
+        pre_delay_ms=pre_delay_ms,
+        ir_hpf_hz=ir_hpf_hz,
+    )
+    wet_gain = 10.0 ** (wet_db / 20.0)
     return dry_stereo + wet * wet_gain

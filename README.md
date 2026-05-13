@@ -36,24 +36,36 @@ Audio tags work with v3 only. The v2 fallback ignores them — use longer punctu
 ## Pipeline
 
 ```
-ElevenLabs v3 (PCM 48 kHz mono, chunked with previous_text/next_text/seed,
-               disk-cached by content hash)
+ElevenLabs v3 (PCM 48 kHz mono, chunked at ~4.4k chars with prev/next_text+seed,
+               disk-cached by content hash, tone preset `[soft][slowly]`
+               reasserted at every chunk that lacks a leading [tag])
+        ↓
+Per chunk: pyloudnorm to -19 LUFS  → Rubber Band R3 time-stretch ×1.18
+           (preserve_formants=True, smooth transients, long FFT window)
+        ↓
+Equal-power crossfade stitch (30 ms) + programmatic ### PAUSE silences
         ↓
 Voice: HPF 90 → mud cut → Compressor → split-band De-esser →
        Presence (+2 dB @ 4 kHz) → Air (+1.5 dB shelf @ 10 kHz) →
-       Convolution reverb send (plate IR, 25 ms pre-delay, HPF 250 Hz)
+       Convolution reverb send (plate IR, 25 ms pre-delay, HPF 250 Hz,
+       wet ducked during voice / lifted +4 dB during long pauses)
         ↓
-Background loop+crossfade → fades → LPF 12 kHz → Compressor → Gain →
+Background loop+crossfade → fades → LPF 12 kHz → static pocket EQ
+                                    (-2 dB peak @ 2 kHz, Q 0.7) →
+                                    Compressor → Gain →
                                     M/S widen (mid -2 dB, side ×1.15)
         ↓
-Frequency-selective sidechain ducking (only 200 Hz – 4 kHz of music
-ducks, driven by voice word-band envelope, 10 ms look-ahead, -9 dB range)
+Script-aware sidechain ducking: deterministic curve from phrase
+timestamps — 300 ms predictive descent, -9 dB hold, 700 ms S-curve
+release, +1.5 dB lift during pauses ≥ 1.5 s. Combined with reactive
+detector (preserves +lift; reactive deepens negative ducks). Only the
+200 Hz – 4 kHz band of music moves.
         ↓
 Master: HPF 30 → glue Compressor → +1 dB shelf @ 12 kHz →
-        4× oversampled true-peak Limiter at -1 dBTP →
-        LUFS normalize to -16 → TPDF dither for 16-bit WAV
+        LUFS normalize to -16 → 4× oversampled true-peak Limiter
+        at -1 dBTP → TPDF dither for 16-bit WAV
         ↓
-Verification gate: LUFS ±0.5 / TP ≤ -1.0 dBTP / LRA 4-10 LU /
+Verification gate: LUFS ±0.5 / TP ≤ -1.0 dBTP / LRA 5-18 LU /
                    |mono-sum delta| ≤ 3 LU
         ↓
 WAV/MP3 master + voice/music/premaster stems in outputs/

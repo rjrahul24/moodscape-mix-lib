@@ -85,18 +85,22 @@ with st.sidebar:
     stability_default = tts.STABILITY_PRESETS[stability_preset]
     stability = st.slider("Stability (fine-tune)", 0.0, 1.0, stability_default, 0.05,
                           help="≥0.75 makes v3 ignore audio tags; ≤0.40 may drift.")
-    similarity = st.slider("Similarity boost", 0.0, 1.0, 0.92, 0.01,
-                           help=("Higher = stricter timbre match across chunks. "
-                                 "0.92 is the recommended floor for meditations longer "
-                                 "than ~2 minutes — anything looser lets v3 drift "
-                                 "between chunks. v3 has no server-side stitching "
-                                 "(neither prev/next_text nor prev_request_ids), so "
-                                 "similarity_boost + a fixed seed are the only "
-                                 "cross-chunk timbre anchors."))
+    similarity = st.slider("Similarity boost", 0.0, 1.0, 0.78, 0.01,
+                           help=("0.78 is the production-quality default — values "
+                                 "above ~0.80 introduce timbral artifacts (a "
+                                 "zippery character on sibilants/breaths) even "
+                                 "though they nominally tighten cross-chunk match. "
+                                 "Tone-preset re-assertion and per-chunk LUFS "
+                                 "normalization handle cross-chunk drift more "
+                                 "cleanly than pushing similarity higher."))
     style = st.slider("Style", 0.0, 1.0, 0.0, 0.05,
                       help="ElevenLabs explicitly recommends 0.0 for meditation.")
-    speed = st.slider("Speed", 0.7, 1.2, 0.80, 0.01,
-                      help="0.80 ≈ Calm/Headspace pacing; 0.75 = slower; 0.90 = brisk; 1.0 = normal.")
+    speed = st.slider("Speed", 0.7, 1.2, 0.88, 0.01,
+                      help=("0.88 leaves headroom for the post-process Rubber Band "
+                            "time-stretch. v3's `speed` slider is a weak lever on "
+                            "its own — splitting slowdown between speed (0.88) and "
+                            "a 1.18x time-stretch keeps both stages in their "
+                            "quality-safe band, hitting ~95-110 WPM."))
     pause_scale = st.slider("Pause scale", 0.5, 2.5, 1.25, 0.05,
                             help=("Multiplies every `### PAUSE Xs` in the script. "
                                   "1.0 = literal; 1.25 = 25 % more breathing room; "
@@ -108,6 +112,32 @@ with st.sidebar:
     )
 
     with st.expander("Advanced TTS"):
+        tone_preset = st.text_input(
+            "Tone preset (prepended at chunk boundaries)",
+            value=tts.DEFAULT_TONE_PRESET,
+            help=("Audio tag(s) to prepend at the START of every speech chunk that "
+                  "doesn't already begin with a `[tag]`. v3 has no server-side "
+                  "stitching, so this is the only continuity tool you have. Set to "
+                  "blank to disable. Common values: `[soft][slowly]`, "
+                  "`[calm][gently]`, `[whispers][softly]`."),
+        )
+        time_stretch_factor = st.slider(
+            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.18, 0.01,
+            help=("Rubber Band R3 LENGTHENS each speech chunk by this factor "
+                  "(1.0 = off, 1.18 = ~18 %% longer). preserve_formants=True so "
+                  "voice timbre is unchanged. The single biggest perceptible "
+                  "cadence change — moves output from 'fast TTS' into the Tamara "
+                  "Levitt / Andy Puddicombe range. Up to ~1.20 is transparent on "
+                  "speech; above 1.30 you can hear coloration on long vowels."),
+        )
+        chunk_lufs_target = st.slider(
+            "Per-chunk LUFS target", -30.0, -10.0, -19.0, 0.5,
+            help=("Normalize each rendered chunk to this integrated LUFS BEFORE "
+                  "mixing. Fixes the 'this paragraph is louder than the next' "
+                  "drift v3 produces. Set the value to -10 to disable."),
+        )
+        if chunk_lufs_target > -10.5:
+            chunk_lufs_target = None  # the slider's "off" sentinel
         language_code_input = st.text_input(
             "Language code (ISO 639-1, optional)", value="",
             placeholder="e.g. en, es, fr, ja",
@@ -123,15 +153,39 @@ with st.sidebar:
     st.header("Mix")
     bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, -14.0, 0.5)
     st.markdown("**Sidechain duck**")
+    use_script_aware_duck = st.checkbox(
+        "Script-aware (predictive + pause lift)",
+        value=True,
+        help=("Builds a deterministic gain curve from phrase timestamps: "
+              "descends 300 ms BEFORE each phrase, holds -9 dB during, "
+              "releases over 700 ms, LIFTS the music +1.5 dB during long "
+              "pauses. Combined with the reactive detector via min-gain "
+              "as a safety net for off-script audio. Makes the bed 'breathe' "
+              "with the voice."),
+    )
     duck_range_db = st.slider("Duck range (dB)", -24.0, 0.0, -9.0, 0.5,
                               help="Maximum dip. -9 dB sounds like Calm/Headspace.")
-    duck_release_ms = st.slider("Duck release (ms)", 50.0, 1500.0, 500.0, 25.0)
-    duck_lookahead_ms = st.slider("Duck look-ahead (ms)", 0.0, 30.0, 10.0, 1.0)
+    duck_release_ms = st.slider("Duck release (ms)", 50.0, 1500.0, 700.0, 25.0,
+                                help="700 ms feels like 'breathing'. Was 500 ms (Auphonic default).")
+    duck_lookahead_ms = st.slider("Duck look-ahead (ms)", 0.0, 30.0, 10.0, 1.0,
+                                  help="Reactive detector look-ahead. Script-aware duck has its own 300 ms predictive descent.")
+    duck_lift_db = st.slider("Pause lift (dB)", 0.0, 4.0, 1.5, 0.25,
+                             help="Music lift during pauses ≥ 1.5 s. +1.5 dB is conservative; >+3 dB starts to sound like 'rising' rather than 'breathing'.")
+
+    st.markdown("**Music pocket EQ (static)**")
+    music_pocket_db = st.slider("Pocket cut (dB @ 2 kHz)", -6.0, 0.0, -2.0, 0.25,
+                                help=("Permanent 2 kHz dip in the music bed so the "
+                                      "speech intelligibility band is always clear. "
+                                      "Lets dynamic ducking be gentler."))
 
     st.markdown("**Voice tone**")
     presence_db = st.slider("Presence (+dB @ 4 kHz)", -3.0, 6.0, 2.0, 0.5)
     air_db = st.slider("Air (+dB @ 10 kHz shelf)", -3.0, 6.0, 1.5, 0.5)
     reverb_wet_db = st.slider("Reverb wet (dB)", -40.0, -6.0, -20.0, 0.5)
+    reverb_duck_db = st.slider("Reverb duck during voice (dB)", -12.0, 0.0, -6.0, 0.5,
+                               help="Cut the voice reverb wet while voice is speaking so consonants stay clear.")
+    reverb_lift_db = st.slider("Reverb lift during pauses (dB)", 0.0, 9.0, 4.0, 0.5,
+                               help="Boost the wet during long pauses so the tail blooms into the silence — the 'spacious room' cue.")
 
     st.divider()
     st.header("Arrangement")
@@ -231,9 +285,14 @@ if render_clicked:
         duck_range_db=duck_range_db,
         duck_release_ms=duck_release_ms,
         duck_lookahead_ms=duck_lookahead_ms,
+        use_script_aware_duck=use_script_aware_duck,
+        duck_lift_db=duck_lift_db,
+        music_pocket_db=music_pocket_db,
         pre_roll_s=pre_roll_s,
         post_roll_s=post_roll_s,
         reverb_wet_db=reverb_wet_db,
+        reverb_duck_db=reverb_duck_db,
+        reverb_lift_db=reverb_lift_db,
         reverb_ir_path=reverb_ir_path,
         presence_db=presence_db,
         air_db=air_db,
@@ -258,11 +317,17 @@ if render_clicked:
             apply_text_normalization=normalization,
             progress=tts_progress,
             pause_scale=pause_scale,
+            tone_preset=(tone_preset or None),
+            time_stretch_factor=float(time_stretch_factor),
+            normalize_chunk_lufs=chunk_lufs_target,
         )
         progress.progress(70, text="Mixing voice + background…")
 
-        manifest = render(voice, sr, bg_path, settings, out_path,
-                          output_format=output_format)
+        manifest = render(
+            voice, sr, bg_path, settings, out_path,
+            output_format=output_format,
+            speech_segments=tts_manifest.get("speech_segments"),
+        )
         progress.progress(100, text="Done.")
     except Exception as e:
         progress.empty()
