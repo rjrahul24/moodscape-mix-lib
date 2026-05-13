@@ -24,9 +24,9 @@ from meditation_mixer.mixer import MixSettings, render
 st.set_page_config(page_title="Meditation Mixer", page_icon="🧘", layout="wide")
 st.title("Meditation Audio Mixer")
 st.caption(
-    "ElevenLabs v3 + Pedalboard. Convolution reverb, split-band de-esser, "
-    "frequency-selective ducking with look-ahead, 4× true-peak limiter, "
-    "LUFS-gated master."
+    "ElevenLabs v3 + Pedalboard. Clean voice path by default (no reverb / "
+    "EQ / compression), frequency-selective ducking with look-ahead, "
+    "4× true-peak limiter, LUFS-gated master."
 )
 
 if not ELEVENLABS_API_KEY:
@@ -95,16 +95,18 @@ with st.sidebar:
                                  "cleanly than pushing similarity higher."))
     style = st.slider("Style", 0.0, 1.0, 0.0, 0.05,
                       help="ElevenLabs explicitly recommends 0.0 for meditation.")
-    speed = st.slider("Speed", 0.7, 1.2, 0.88, 0.01,
-                      help=("0.88 leaves headroom for the post-process Rubber Band "
-                            "time-stretch. v3's `speed` slider is a weak lever on "
-                            "its own — splitting slowdown between speed (0.88) and "
-                            "a 1.18x time-stretch keeps both stages in their "
-                            "quality-safe band, hitting ~95-110 WPM."))
-    pause_scale = st.slider("Pause scale", 0.5, 2.5, 1.25, 0.05,
+    speed = st.slider("Speed", 0.7, 1.2, 0.80, 0.01,
+                      help=("0.80 is the new default — pulls v3 toward calm "
+                            "meditation pacing using the API alone, with no "
+                            "post-process time-stretch (which is the main "
+                            "source of 'robotic warble' on long vowels). "
+                            "Below 0.78 you start to hear timbre warble; "
+                            "above 0.85 the voice drifts back to 'narrator'."))
+    pause_scale = st.slider("Pause scale", 0.5, 3.0, 1.6, 0.05,
                             help=("Multiplies every `### PAUSE Xs` in the script. "
-                                  "1.0 = literal; 1.25 = 25 % more breathing room; "
-                                  "1.5+ for very slow meditations."))
+                                  "1.6 gives generous breathing room between "
+                                  "phrases; raise further for very slow "
+                                  "meditations."))
     seed = st.number_input(
         "Seed", min_value=tts.SEED_MIN, max_value=tts.SEED_MAX,
         value=DEFAULT_SEED, step=1,
@@ -122,13 +124,13 @@ with st.sidebar:
                   "`[calm][gently]`, `[whispers][softly]`."),
         )
         time_stretch_factor = st.slider(
-            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.18, 0.01,
-            help=("Rubber Band R3 LENGTHENS each speech chunk by this factor "
-                  "(1.0 = off, 1.18 = ~18 %% longer). preserve_formants=True so "
-                  "voice timbre is unchanged. The single biggest perceptible "
-                  "cadence change — moves output from 'fast TTS' into the Tamara "
-                  "Levitt / Andy Puddicombe range. Up to ~1.20 is transparent on "
-                  "speech; above 1.30 you can hear coloration on long vowels."),
+            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.0, 0.01,
+            help=("OFF by default (1.0). Post-TTS time-stretching is the "
+                  "single biggest cause of 'robotic warble' on long vowels — "
+                  "we slow the voice via the API `speed` slider instead. "
+                  "Only enable if you really need extra slowdown beyond "
+                  "what `speed` + `pause scale` can deliver, and keep it "
+                  "below 1.08 to stay transparent."),
         )
         chunk_lufs_target = st.slider(
             "Per-chunk LUFS target", -30.0, -10.0, -19.0, 0.5,
@@ -178,10 +180,31 @@ with st.sidebar:
                                       "speech intelligibility band is always clear. "
                                       "Lets dynamic ducking be gentler."))
 
-    st.markdown("**Voice tone**")
-    presence_db = st.slider("Presence (+dB @ 4 kHz)", -3.0, 6.0, 2.0, 0.5)
-    air_db = st.slider("Air (+dB @ 10 kHz shelf)", -3.0, 6.0, 1.5, 0.5)
-    reverb_wet_db = st.slider("Reverb wet (dB)", -40.0, -6.0, -20.0, 0.5)
+    st.markdown("**Voice processing (off by default — clean ElevenLabs output)**")
+    st.caption(
+        "All voice post-processing is disabled by default. The previous "
+        "defaults (plate reverb + presence/air EQ + compression) added an "
+        "'echoey/robotic' character on close-mic'd TTS. Leave these off "
+        "for the cleanest, most natural voice."
+    )
+    apply_voice_reverb = st.checkbox(
+        "Apply convolution reverb on voice", value=False,
+        help="Plate reverb send. Off by default to keep the voice clean and crisp.",
+    )
+    apply_voice_compression = st.checkbox(
+        "Apply voice compression", value=False,
+        help="Vocal compressor (-22 dB threshold, 2.5:1). Adds a 'broadcast/podcast' polish — off by default.",
+    )
+    apply_voice_deess = st.checkbox(
+        "Apply de-esser", value=False,
+        help="Reduces sibilance. ElevenLabs v3 voices are clean enough that this usually just makes the voice less crisp.",
+    )
+    presence_db = st.slider("Presence (+dB @ 4 kHz)", -3.0, 6.0, 0.0, 0.5,
+                            help="0 = bypass. Adds a forward/intimate character at the cost of naturalness.")
+    air_db = st.slider("Air (+dB @ 10 kHz shelf)", -3.0, 6.0, 0.0, 0.5,
+                       help="0 = bypass. Adds 'sparkle' — usually unnecessary on v3.")
+    reverb_wet_db = st.slider("Reverb wet (dB)", -40.0, -6.0, -20.0, 0.5,
+                              help="Only used when 'Apply convolution reverb on voice' is on.")
     reverb_duck_db = st.slider("Reverb duck during voice (dB)", -12.0, 0.0, -6.0, 0.5,
                                help="Cut the voice reverb wet while voice is speaking so consonants stay clear.")
     reverb_lift_db = st.slider("Reverb lift during pauses (dB)", 0.0, 9.0, 4.0, 0.5,
@@ -290,6 +313,9 @@ if render_clicked:
         music_pocket_db=music_pocket_db,
         pre_roll_s=pre_roll_s,
         post_roll_s=post_roll_s,
+        apply_voice_reverb=apply_voice_reverb,
+        apply_voice_compression=apply_voice_compression,
+        apply_voice_deess=apply_voice_deess,
         reverb_wet_db=reverb_wet_db,
         reverb_duck_db=reverb_duck_db,
         reverb_lift_db=reverb_lift_db,

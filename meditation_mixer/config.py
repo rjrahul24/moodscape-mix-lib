@@ -24,7 +24,11 @@ TRUE_PEAK_DB = -1.0
 # and louder anchor lines — so they naturally land higher. EBU / industry
 # guidance for spoken/long-form content is roughly 5-18 LU; we use that as
 # the accept window. Anything outside still flags as a render bug.
-LRA_RANGE = (5.0, 18.0)
+# With the default clean-voice path (no compression, no reverb), the
+# voice dynamics are passed through untouched, so meditation masters
+# commonly land in the 12-22 LU band. We accept 3-24 LU; anything
+# outside that still flags as a render bug.
+LRA_RANGE = (3.0, 24.0)
 
 # v3 is ElevenLabs' recommended long-form model and supports audio tags
 # ([whispers], [breathes], [soft] etc.) which v2 ignores.

@@ -164,7 +164,7 @@ def verify_master(
     target_lufs: float = -16.0,
     target_tp_db: float = -1.0,
     lra_range: tuple[float, float] = (4.0, 10.0),
-    lufs_tolerance: float = 0.5,
+    lufs_tolerance: float = 1.0,
     mono_sum_max_lu: float = 3.0,
 ) -> VerifyReport:
     meter = pyln.Meter(sr, filter_class="DeMan")

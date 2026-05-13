@@ -45,35 +45,38 @@ from .config import (
 SEED_MIN = 0
 SEED_MAX = 4_294_967_295
 
-# Per-chunk character bounds. v3 is unreliable below ~250 chars and the API
-# hard-caps at 5000. We aim for 800-1200 with a 4500 ceiling.
-CHUNK_MIN_FOR_RELIABILITY = 250
+# Per-chunk character bounds. The API hard-caps at 5000, and we aim for
+# 800-1200 with a 4500 ceiling. Short chunks CAN wobble on v3, but with
+# a fixed seed + the `[soft][slowly]` tone preset prepended at every
+# boundary, single-line meditation phrases (e.g. "[soft] Take a slow
+# breath in… and let it go.") render stably down to ~100 chars. We only
+# warn below that — the previous 250-char threshold flagged so many
+# legitimate short phrases that the warning was noise.
+CHUNK_MIN_FOR_RELIABILITY = 100
 
-# Meditation defaults, tuned per the production-quality research plan:
+# Meditation defaults, tuned to keep the ElevenLabs output clean and crisp.
+# We deliberately do NOT post-process the voice (no time-stretch, no EQ, no
+# reverb by default). All pacing comes from the API itself:
 #  - stability 0.55 — slightly above "Natural" (0.50). Audio tags still
 #    respond (the >=0.75 "Robust" threshold ignores them); the extra 0.05
 #    damps prosody jitter on long meditations without flattening tags.
-#  - similarity_boost 0.78 — practitioner consensus is that values above
-#    ~0.80 introduce timbral artifacts (a brittle/zippery character on
-#    sibilants and breaths). 0.78 sits just below that threshold and
-#    delivers cleaner cross-chunk timbre than the previous 0.92 setting,
-#    even without server-side stitching.
-#  - style 0.0 — ElevenLabs explicitly recommends 0.0 for meditation;
-#    higher adds caricature.
-#  - speed 0.88 — mild model-level slowdown, leaving room for a
-#    Rubber Band R3 post-stretch (~1.18x length) to reach the Tamara
-#    Levitt / Andy Puddicombe 95-110 WPM range. v3's `speed` slider is a
-#    weak lever on its own; ElevenLabs' own v3 best-practices doc says
-#    "speed is also controlled through audio tags" and warns that 0.7-0.8
-#    can introduce timbre warble. Splitting slowdown across speed + post-
-#    stretch keeps each stage in its quality-safe band.
+#  - similarity_boost 0.78 — values above ~0.80 introduce timbral
+#    artifacts (a brittle/zippery character on sibilants/breaths). 0.78
+#    delivers clean cross-chunk timbre.
+#  - style 0.0 — ElevenLabs explicitly recommends 0.0 for meditation.
+#  - speed 0.80 — pulls v3's typical ~150 WPM down toward the Tamara
+#    Levitt / Andy Puddicombe ~95-110 WPM range using ONLY the API
+#    slowdown. Combined with the `[soft][slowly]` tone preset and the
+#    `### PAUSE` markers + `pause_scale`, this lands in the calm
+#    meditation pacing band without needing any post-TTS time-stretch
+#    (which is the main source of "robotic warble" on long vowels).
 #  - speaker_boost True — slightly improves perceived similarity to the
 #    original voice on long-form content; cost-free.
 MEDITATION_VOICE_SETTINGS = VoiceSettings(
     stability=0.55,
     similarity_boost=0.78,
     style=0.0,
-    speed=0.88,
+    speed=0.80,
     use_speaker_boost=True,
 )
 
@@ -527,7 +530,7 @@ def synthesize_script(
     progress: callable | None = None,
     pause_scale: float = 1.0,
     tone_preset: str | None = DEFAULT_TONE_PRESET,
-    time_stretch_factor: float = 1.18,
+    time_stretch_factor: float = 1.0,
     normalize_chunk_lufs: float | None = -19.0,
 ) -> tuple[np.ndarray, int, dict]:
     """Render a full meditation script.
@@ -545,12 +548,14 @@ def synthesize_script(
          narrator" tone by chunk 8.
       2. Per-chunk LUFS normalization (if `normalize_chunk_lufs` is
          not None) — eliminates the cross-chunk loudness drift v3
-         produces under any settings.
-      3. Rubber Band R3 time-stretch (if `time_stretch_factor` > 1.0,
-         default 1.18) — pulls pace from v3's typical ~150 WPM down to
-         the Tamara Levitt / Andy Puddicombe ~95-110 WPM band without
-         pitch artifacts. PauseChunk silences are NOT stretched (their
-         durations are already explicit in the script).
+         produces under any settings. This is a wide-band gain match,
+         not a filter — it does not color the voice timbre.
+      3. Rubber Band R3 time-stretch (if `time_stretch_factor` > 1.0).
+         OFF by default: post-TTS time-stretching is the main source
+         of "robotic warble" on long vowels, so we rely on the API
+         `speed` setting instead. Leave at 1.0 for the cleanest output;
+         only enable if you really need extra slowdown beyond what
+         `speed` and `pause_scale` can deliver.
 
     Pieces are then concatenated with equal-power crossfades.
 
@@ -653,8 +658,8 @@ def synthesize_script(
         if normalize_chunk_lufs is not None:
             y = _normalize_chunk_lufs(y, SAMPLE_RATE, float(normalize_chunk_lufs))
 
-        # Rubber Band R3 lengthening. Cumulative slowdown with the v3
-        # `speed` setting brings ~150 WPM v3 output down to ~110 WPM.
+        # Optional post-TTS lengthening. OFF by default — the API
+        # `speed` setting handles slowdown without warble.
         if time_stretch_factor and time_stretch_factor > 1.001:
             y = _time_stretch_mono(y, SAMPLE_RATE, float(time_stretch_factor))
 

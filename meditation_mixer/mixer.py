@@ -1,7 +1,9 @@
 """End-to-end mix pipeline: voice + background -> mastered stereo file.
 
-Voice chain  : HPF 90 → mud cut → Compressor → De-ess → Presence + Air →
-               convolution reverb send (HPF'd, plate IR, 25 ms pre-delay)
+Voice chain  : HPF 90 (rumble removal only); optional mud cut, compression,
+               de-ess, presence/air EQ, and convolution reverb — ALL off
+               by default so the ElevenLabs output reaches the bus
+               un-coloured.
 Music chain  : LPF 12 kHz → Compressor → Gain → M/S widen
 Ducking      : Frequency-selective sidechain (200 Hz – 4 kHz) with 10 ms
                look-ahead; only the mid band of the music ducks.
@@ -76,18 +78,22 @@ class MixSettings:
     bg_fade_in_s: float = 4.0
     bg_fade_out_s: float = 6.0
 
-    # Voice EQ + reverb
+    # Voice EQ + reverb. ALL of these default to off / 0 dB so the
+    # ElevenLabs output passes through to the mix bus un-coloured.
+    # Convolution reverb on a close-mic'd TTS voice is the primary
+    # source of the "echoey/robotic" character the previous defaults
+    # had, so it is gated behind `apply_voice_reverb`.
+    apply_voice_reverb: bool = False
+    apply_voice_compression: bool = False
+    apply_voice_deess: bool = False
     reverb_wet_db: float = -20.0
     reverb_pre_delay_ms: float = 25.0
     reverb_ir_path: Path | None = None  # None = synthetic plate
-    presence_db: float = 2.0
-    air_db: float = 1.5
-    mud_cut_db: float = -2.5
+    presence_db: float = 0.0
+    air_db: float = 0.0
+    mud_cut_db: float = 0.0
 
-    # Reverb ducking — attenuate the voice's wet send while the voice is
-    # speaking (so consonants stay clear) and LIFT it during long pauses
-    # so the tail blooms into the silence. The +lift produces the
-    # "spacious room" cue characteristic of Headspace/Calm production.
+    # Reverb ducking. Only used when `apply_voice_reverb` is True.
     reverb_duck_db: float = -6.0
     reverb_lift_db: float = 4.0
 
@@ -106,13 +112,28 @@ class MixSettings:
 
 
 def _voice_chain(settings: MixSettings) -> Pedalboard:
-    return Pedalboard([
-        HighpassFilter(cutoff_frequency_hz=90.0),
-        PeakFilter(cutoff_frequency_hz=300.0, gain_db=settings.mud_cut_db, q=1.0),
-        Compressor(threshold_db=-22.0, ratio=2.5, attack_ms=12.0, release_ms=120.0),
-        PeakFilter(cutoff_frequency_hz=4000.0, gain_db=settings.presence_db, q=0.7),
-        HighShelfFilter(cutoff_frequency_hz=10000.0, gain_db=settings.air_db),
-    ])
+    """Build the voice processing chain. Everything except the 90 Hz HPF
+    (sub-audible rumble removal) is opt-in — by default we keep the
+    ElevenLabs output crisp and untouched.
+    """
+    stages: list = [HighpassFilter(cutoff_frequency_hz=90.0)]
+    if abs(settings.mud_cut_db) > 0.05:
+        stages.append(PeakFilter(
+            cutoff_frequency_hz=300.0, gain_db=settings.mud_cut_db, q=1.0,
+        ))
+    if settings.apply_voice_compression:
+        stages.append(Compressor(
+            threshold_db=-22.0, ratio=2.5, attack_ms=12.0, release_ms=120.0,
+        ))
+    if abs(settings.presence_db) > 0.05:
+        stages.append(PeakFilter(
+            cutoff_frequency_hz=4000.0, gain_db=settings.presence_db, q=0.7,
+        ))
+    if abs(settings.air_db) > 0.05:
+        stages.append(HighShelfFilter(
+            cutoff_frequency_hz=10000.0, gain_db=settings.air_db,
+        ))
+    return Pedalboard(stages)
 
 
 def _bg_chain(
@@ -220,21 +241,30 @@ def render(
         fade_out_s=settings.bg_fade_out_s,
     )
 
-    # 3. Voice chain (HPF / mud / comp / presence / air).
+    # 3. Voice chain. By default this is just a 90 Hz HPF — every other
+    # stage (compressor, EQ) is opt-in.
     voice_fx = _voice_chain(settings)(voice_padded, sr)
     voice_mono = _to_mono(voice_fx)
 
-    # 4. De-ess after compression so sibilance is loud relative to body.
-    voice_mono = deess.deess(voice_mono, sr)
+    # 4. De-ess — opt-in. ElevenLabs v3 voices are clean enough that
+    # de-essing usually reduces "crispness" more than it helps.
+    if settings.apply_voice_deess:
+        voice_mono = deess.deess(voice_mono, sr)
 
-    # 5. Convolution reverb. Split dry from wet so the wet send can be
-    # ducked independently of the music duck below.
-    dry_stereo, wet_stereo = reverb.convolution_reverb_split(
-        voice_mono, sr,
-        ir_path=settings.reverb_ir_path,
-        pre_delay_ms=settings.reverb_pre_delay_ms,
-        ir_hpf_hz=250.0,
-    )
+    # 5. Convolution reverb — opt-in. Plate reverb on close-mic'd TTS
+    # is the main source of "slight echo / robotic" character, so we
+    # skip the wet path entirely by default and ship the dry voice as
+    # stereo.
+    if settings.apply_voice_reverb:
+        dry_stereo, wet_stereo = reverb.convolution_reverb_split(
+            voice_mono, sr,
+            ir_path=settings.reverb_ir_path,
+            pre_delay_ms=settings.reverb_pre_delay_ms,
+            ir_hpf_hz=250.0,
+        )
+    else:
+        dry_stereo = np.stack([voice_mono, voice_mono], axis=0).astype(np.float32)
+        wet_stereo = None
 
     # 6. Background FX + M/S widen. The PeakFilter in _bg_chain pre-
     # carves a static pocket in the speech-intelligibility band.
@@ -255,8 +285,9 @@ def render(
     # timestamps (or fall back to envelope-based phrase detection on the
     # voice). Combined with reactive detector via np.minimum so off-
     # script audio (breaths, mouth noise) still gets ducked.
-    n = min(dry_stereo.shape[-1], bg_fx.shape[-1], voice_mono.shape[0],
-            wet_stereo.shape[-1])
+    n = min(dry_stereo.shape[-1], bg_fx.shape[-1], voice_mono.shape[0])
+    if wet_stereo is not None:
+        n = min(n, wet_stereo.shape[-1])
     if settings.use_script_aware_duck:
         bg_ducked, gain_curve_db = ducking.script_aware_duck(
             bg_fx[..., :n],
@@ -287,12 +318,10 @@ def render(
         )
         gain_curve_db = None
 
-    # 7b. Reverb ducking. The wet send rides an INVERSE-ish curve: cut
-    # while voice is speaking (so the dry voice stays clear), lift
-    # during long pauses (so the tail blooms). We re-derive the wet
-    # envelope using a smaller duck depth and a larger positive lift
-    # than the music — small but very characteristic move.
-    if settings.reverb_duck_db < 0.0 or settings.reverb_lift_db > 0.0:
+    # 7b. Reverb ducking. Only relevant when the reverb send is active.
+    if wet_stereo is not None and (
+        settings.reverb_duck_db < 0.0 or settings.reverb_lift_db > 0.0
+    ):
         wet_gain_db = ducking.script_aware_gain_db(
             n, sr,
             phrases=shifted_segments
@@ -309,11 +338,15 @@ def render(
         wet_lin = (10.0 ** (wet_gain_db / 20.0)).astype(np.float32)
         wet_send_gain = 10.0 ** (settings.reverb_wet_db / 20.0)
         wet_ducked = wet_stereo[..., :n] * wet_send_gain * wet_lin
-    else:
+    elif wet_stereo is not None:
         wet_send_gain = 10.0 ** (settings.reverb_wet_db / 20.0)
         wet_ducked = wet_stereo[..., :n] * wet_send_gain
+    else:
+        wet_ducked = None
 
-    voice_stereo = dry_stereo[..., :n] + wet_ducked
+    voice_stereo = dry_stereo[..., :n]
+    if wet_ducked is not None:
+        voice_stereo = voice_stereo + wet_ducked
 
     # 8. Sum to a stereo pre-master.
     premaster = voice_stereo[..., :n] + bg_ducked[..., :n]
