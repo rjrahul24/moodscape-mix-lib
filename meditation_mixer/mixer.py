@@ -44,9 +44,9 @@ from .config import (
 @dataclass
 class MixSettings:
     # Music level + ducking
-    bg_gain_db: float = -14.0
+    bg_gain_db: float = -11.0
     duck_threshold_db: float = -30.0
-    duck_range_db: float = -9.0
+    duck_range_db: float = -7.0
     duck_attack_ms: float = 15.0
     duck_release_ms: float = 500.0
     duck_lookahead_ms: float = 10.0
@@ -60,7 +60,7 @@ class MixSettings:
     use_script_aware_duck: bool = True
     duck_pre_descent_ms: float = 300.0
     duck_attack_ramp_ms: float = 250.0
-    duck_lift_db: float = 1.5
+    duck_lift_db: float = 2.0
     duck_lift_pause_s: float = 1.5
 
     # Static "carved pocket" on the music. A gentle dip in the speech-
@@ -71,6 +71,15 @@ class MixSettings:
     music_pocket_db: float = -2.0
     music_pocket_freq_hz: float = 2000.0
     music_pocket_q: float = 0.7
+
+    # High-shelf brightness boost on the music bed. Compensates for
+    # Fletcher-Munson brightness loss when ducking attenuates overall
+    # volume — the ear loses high-frequency sensitivity faster than
+    # midrange sensitivity as amplitude drops.  A +3 dB shelf at 4500 Hz
+    # keeps the music sounding ethereal and present even when ducked by
+    # -7 to -9 dB.  (Ref: Optimizations12.md §3.3)
+    music_treble_db: float = 3.0
+    music_treble_freq_hz: float = 4500.0
 
     # Arrangement
     pre_roll_s: float = 3.0
@@ -141,12 +150,26 @@ def _bg_chain(
     pocket_freq_hz: float,
     pocket_gain_db: float,
     pocket_q: float,
+    treble_db: float = 0.0,
+    treble_freq_hz: float = 4500.0,
 ) -> Pedalboard:
-    """Music processing chain. The PeakFilter dip near 2 kHz pre-carves a
-    static "pocket" in the speech-intelligibility band so dynamic ducking
-    can be gentler. If `pocket_gain_db` is 0, the filter is a no-op.
+    """Music processing chain.
+
+    * High-shelf boost at `treble_freq_hz` adds brightness that survives
+      heavy ducking (Fletcher-Munson compensation — §3.3 of Optimizations12).
+    * PeakFilter dip near 2 kHz pre-carves a static "pocket" in the
+      speech-intelligibility band so dynamic ducking can be gentler.
+    * LPF at 12 kHz acts as a safety ceiling after the treble boost.
+    * Compressor + Gain finish the chain.
     """
-    stages: list = [LowpassFilter(cutoff_frequency_hz=12000.0)]
+    stages: list = []
+    # Treble boost BEFORE the LPF so the LPF acts as a safety ceiling.
+    if abs(treble_db) > 0.05:
+        stages.append(HighShelfFilter(
+            cutoff_frequency_hz=treble_freq_hz,
+            gain_db=treble_db,
+        ))
+    stages.append(LowpassFilter(cutoff_frequency_hz=12000.0))
     if abs(pocket_gain_db) > 0.05:
         stages.append(PeakFilter(
             cutoff_frequency_hz=pocket_freq_hz,
@@ -273,6 +296,8 @@ def render(
         pocket_freq_hz=settings.music_pocket_freq_hz,
         pocket_gain_db=settings.music_pocket_db,
         pocket_q=settings.music_pocket_q,
+        treble_db=settings.music_treble_db,
+        treble_freq_hz=settings.music_treble_freq_hz,
     )(bg_fit, sr)
     bg_fx = _to_stereo(bg_fx)
     bg_fx = mastering.adjust_stereo_width(

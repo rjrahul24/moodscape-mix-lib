@@ -49,4 +49,10 @@ SUPPORTED_BG_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aiff", ".aif"}
 # separately via request_id stitching in tts.py.) Below ~250 chars v3
 # starts to wobble, so we still warn under that threshold.
 CHUNK_MAX_CHARS = 4400
+
+# Conservative chunking: 800 chars per chunk, as recommended by
+# Optimizations12.md §2.2 for users experiencing attention-decay drift
+# on very long meditations. Opt-in via the UI "Chunking strategy" toggle.
+CHUNK_MAX_CHARS_CONSERVATIVE = 800
+
 CHUNK_MIN_CHARS = 250

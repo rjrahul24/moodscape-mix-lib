@@ -33,6 +33,57 @@ _PAUSE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- Markdown stripping (safety net) -------------------------------- #
+# TTS models interpret markdown symbols as literal text or timing cues,
+# resulting in robotic beats and vocalised bullet characters. The
+# SCRIPT_GUIDE already tells users to write plain text, but this
+# catches any formatting that slips through.  `### PAUSE` lines are
+# explicitly preserved since that is our own pause-marker syntax.
+
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")        # **bold**
+_MD_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")  # *italic*
+_MD_HEADING_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)  # # Heading
+_MD_BULLET_RE = re.compile(r"^[ \t]*[-*+]\s+", re.MULTILINE)  # - bullet
+_MD_NUMLIST_RE = re.compile(r"^[ \t]*\d+\.\s+", re.MULTILINE)  # 1. item
+
+# Multiline variant of _PAUSE_RE — needed because _strip_markdown operates
+# on the full script text, not individual lines.
+_PAUSE_ML_RE = re.compile(
+    r"^\s*###\s*PAUSE\s+\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds?)?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove common markdown formatting while preserving ``### PAUSE`` lines.
+
+    This is a best-effort safety net — it handles the most common formatting
+    artifacts (**bold**, *italic*, headings, bullets, numbered lists) without
+    touching audio-tag brackets ``[soft]`` or our pause-marker syntax.
+    """
+    # Protect ### PAUSE lines from the heading stripper by temporarily
+    # swapping them with indexed sentinels that no regex can match.
+    pause_lines: list[str] = []
+
+    def _save_pause(m: re.Match) -> str:
+        idx = len(pause_lines)
+        pause_lines.append(m.group(0))
+        return f"\x00PAUSE{idx}\x00"
+
+    protected = _PAUSE_ML_RE.sub(_save_pause, text)
+
+    # Strip markdown constructs.
+    protected = _MD_BOLD_RE.sub(r"\1", protected)    # **bold** → bold
+    protected = _MD_ITALIC_RE.sub(r"\1", protected)  # *italic* → italic
+    protected = _MD_HEADING_RE.sub("", protected)     # # Heading → Heading
+    protected = _MD_BULLET_RE.sub("", protected)      # - item → item
+    protected = _MD_NUMLIST_RE.sub("", protected)     # 1. item → item
+
+    # Restore ### PAUSE lines.
+    for idx, original in enumerate(pause_lines):
+        protected = protected.replace(f"\x00PAUSE{idx}\x00", original)
+    return protected
+
 
 @dataclass
 class SpeechChunk:
@@ -178,6 +229,11 @@ def chunk_script(
     script. Use values >1 for slower/more spacious meditations, <1 for
     tighter ones. 1.0 keeps the script's literal pause lengths.
     """
+    # Safety net: strip common markdown formatting (bold, italic, headings,
+    # bullets, numbered lists) that users may paste in.  `### PAUSE` lines
+    # are preserved.  (Ref: Optimizations12.md §1.1 — eradicate markdown
+    # from the generation payload.)
+    script = _strip_markdown(script)
     items = _split_paragraphs(script)
     scale = max(0.0, float(pause_scale))
     # First, expand any oversize paragraphs into smaller paragraphs. Apply

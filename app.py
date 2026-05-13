@@ -10,6 +10,7 @@ from elevenlabs.types import VoiceSettings
 
 from meditation_mixer import cache, library, reverb, tts
 from meditation_mixer.config import (
+    CHUNK_MAX_CHARS_CONSERVATIVE,
     DEFAULT_MODEL_ID,
     DEFAULT_SEED,
     ELEVENLABS_API_KEY,
@@ -74,39 +75,35 @@ with st.sidebar:
     stability_preset = st.radio(
         "Stability preset",
         options=list(tts.STABILITY_PRESETS.keys()),
-        index=1,  # Natural
+        index=2,  # Meditative
         horizontal=True,
         help=(
             "Creative (0.30): most expressive, can drift on long sessions. "
-            "Natural (0.50): balanced; audio tags work correctly — RECOMMENDED. "
+            "Natural (0.50): balanced. "
+            "Meditative (0.65): RECOMMENDED. Locks voice to prevent drift, honors tags. "
             "Robust (0.80): most stable but IGNORES [whispers]/[soft]/[breathes] tags."
         ),
     )
     stability_default = tts.STABILITY_PRESETS[stability_preset]
     stability = st.slider("Stability (fine-tune)", 0.0, 1.0, stability_default, 0.05,
-                          help="≥0.75 makes v3 ignore audio tags; ≤0.40 may drift.")
-    similarity = st.slider("Similarity boost", 0.0, 1.0, 0.78, 0.01,
-                           help=("0.78 is the production-quality default — values "
+                          help="≥0.75 makes v3 ignore audio tags; ≤0.40 may drift. "
+                               "Research recommends 0.65–0.85 for meditation (Optimizations12 §2.3).")
+    similarity = st.slider("Similarity boost", 0.0, 1.0, 0.80, 0.01,
+                           help=("0.80 is the production default — acts as the acoustic "
+                                 "anchor that locks the voice timbre across chunks. "
+                                 "Research recommends 0.75–0.90 (§2.3). Values "
                                  "above ~0.80 introduce timbral artifacts (a "
-                                 "zippery character on sibilants/breaths) even "
-                                 "though they nominally tighten cross-chunk match. "
-                                 "Tone-preset re-assertion and per-chunk LUFS "
-                                 "normalization handle cross-chunk drift more "
-                                 "cleanly than pushing similarity higher."))
+                                 "zippery character on sibilants/breaths)."))
     style = st.slider("Style", 0.0, 1.0, 0.0, 0.05,
-                      help="ElevenLabs explicitly recommends 0.0 for meditation.")
-    speed = st.slider("Speed", 0.7, 1.2, 0.80, 0.01,
-                      help=("0.80 is the new default — pulls v3 toward calm "
-                            "meditation pacing using the API alone, with no "
-                            "post-process time-stretch (which is the main "
-                            "source of 'robotic warble' on long vowels). "
-                            "Below 0.78 you start to hear timbre warble; "
-                            "above 0.85 the voice drifts back to 'narrator'."))
-    pause_scale = st.slider("Pause scale", 0.5, 3.0, 1.6, 0.05,
-                            help=("Multiplies every `### PAUSE Xs` in the script. "
-                                  "1.6 gives generous breathing room between "
-                                  "phrases; raise further for very slow "
-                                  "meditations."))
+                      help="ElevenLabs and research (§2.3) recommend 0.0 for meditation.")
+    speed = st.slider("Speed", 0.7, 1.2, 0.78, 0.01,
+                      help=("0.78 is the default — pulls v3 toward ~95–110 WPM "
+                            "calm meditation pacing. Research (§1.3) suggests "
+                            "0.85–0.90 but that lands at ~130 WPM, too fast for "
+                            "deep relaxation. Below 0.78 you start to hear "
+                            "timbre warble; above 0.85 the voice drifts to 'narrator'."))
+    pause_scale = st.slider("Pause scale", 0.5, 3.0, 2.0, 0.05,
+                            help="Increased to 2.0 to give much slower, spacious pacing.")
     seed = st.number_input(
         "Seed", min_value=tts.SEED_MIN, max_value=tts.SEED_MAX,
         value=DEFAULT_SEED, step=1,
@@ -124,13 +121,8 @@ with st.sidebar:
                   "`[calm][gently]`, `[whispers][softly]`."),
         )
         time_stretch_factor = st.slider(
-            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.0, 0.01,
-            help=("OFF by default (1.0). Post-TTS time-stretching is the "
-                  "single biggest cause of 'robotic warble' on long vowels — "
-                  "we slow the voice via the API `speed` slider instead. "
-                  "Only enable if you really need extra slowdown beyond "
-                  "what `speed` + `pause scale` can deliver, and keep it "
-                  "below 1.08 to stay transparent."),
+            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.05, 0.01,
+            help="Set to 1.05 to physically slow down the generated voice gently without pitching it down.",
         )
         chunk_lufs_target = st.slider(
             "Per-chunk LUFS target", -30.0, -10.0, -19.0, 0.5,
@@ -150,10 +142,26 @@ with st.sidebar:
             "Text normalization", options=["auto", "on", "off"], index=0,
             help="Controls how numbers, dates, abbreviations are spoken. 'auto' is almost always right.",
         )
+        chunking_strategy = st.radio(
+            "Chunking strategy",
+            options=["Large (default)", "Conservative (research)"],
+            index=0,
+            horizontal=True,
+            help=("Large (4400 chars): fewer chunk boundaries, less inter-chunk "
+                  "drift — empirically validated default. "
+                  "Conservative (800 chars): prevents intra-chunk attention decay "
+                  "as recommended by Optimizations12 §2.2. Use if you experience "
+                  "voice drift on very long (>15 min) meditations."),
+        )
+        max_chunk_chars = (
+            CHUNK_MAX_CHARS_CONSERVATIVE
+            if chunking_strategy.startswith("Conservative")
+            else None  # None = use the default from config
+        )
 
     st.divider()
     st.header("Mix")
-    bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, -14.0, 0.5)
+    bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, -11.0, 0.5)
     st.markdown("**Sidechain duck**")
     use_script_aware_duck = st.checkbox(
         "Script-aware (predictive + pause lift)",
@@ -165,13 +173,15 @@ with st.sidebar:
               "as a safety net for off-script audio. Makes the bed 'breathe' "
               "with the voice."),
     )
-    duck_range_db = st.slider("Duck range (dB)", -24.0, 0.0, -9.0, 0.5,
+    duck_range_db = st.slider("Duck range (dB)", -24.0, 0.0, -7.0, 0.5,
                               help="Maximum dip. -9 dB sounds like Calm/Headspace.")
-    duck_release_ms = st.slider("Duck release (ms)", 50.0, 1500.0, 700.0, 25.0,
-                                help="700 ms feels like 'breathing'. Was 500 ms (Auphonic default).")
+    duck_release_ms = st.slider("Duck release (ms)", 50.0, 2500.0, 1000.0, 25.0,
+                                help=("1000 ms aligns with research (§3.2) lower bound for languid, "
+                                      "cinematic music swell-back. 700 ms feels like 'breathing'; "
+                                      "1500–2000 ms for extra spacious mixes."))
     duck_lookahead_ms = st.slider("Duck look-ahead (ms)", 0.0, 30.0, 10.0, 1.0,
                                   help="Reactive detector look-ahead. Script-aware duck has its own 300 ms predictive descent.")
-    duck_lift_db = st.slider("Pause lift (dB)", 0.0, 4.0, 1.5, 0.25,
+    duck_lift_db = st.slider("Pause lift (dB)", 0.0, 4.0, 2.0, 0.25,
                              help="Music lift during pauses ≥ 1.5 s. +1.5 dB is conservative; >+3 dB starts to sound like 'rising' rather than 'breathing'.")
 
     st.markdown("**Music pocket EQ (static)**")
@@ -179,6 +189,17 @@ with st.sidebar:
                                 help=("Permanent 2 kHz dip in the music bed so the "
                                       "speech intelligibility band is always clear. "
                                       "Lets dynamic ducking be gentler."))
+
+    st.markdown("**Music brightness (high-shelf boost)**")
+    st.caption(
+        "Compensates for Fletcher-Munson brightness loss when ducking "
+        "attenuates overall volume. The ear loses high-freq sensitivity "
+        "faster than midrange as amplitude drops. (Ref: Optimizations12 §3.3)"
+    )
+    music_treble_db = st.slider("Treble boost (dB)", 0.0, 6.0, 3.0, 0.5,
+                                help="+3 dB at 4.5 kHz keeps the music ethereal even when heavily ducked. 0 = bypass.")
+    music_treble_freq_hz = st.slider("Treble freq (Hz)", 3000.0, 6000.0, 4500.0, 100.0,
+                                     help="High-shelf cutoff. 4000–5000 Hz bypasses the fundamental voice band (200–3000 Hz).")
 
     st.markdown("**Voice processing (off by default — clean ElevenLabs output)**")
     st.caption(
@@ -311,6 +332,8 @@ if render_clicked:
         use_script_aware_duck=use_script_aware_duck,
         duck_lift_db=duck_lift_db,
         music_pocket_db=music_pocket_db,
+        music_treble_db=music_treble_db,
+        music_treble_freq_hz=music_treble_freq_hz,
         pre_roll_s=pre_roll_s,
         post_roll_s=post_roll_s,
         apply_voice_reverb=apply_voice_reverb,
@@ -346,6 +369,7 @@ if render_clicked:
             tone_preset=(tone_preset or None),
             time_stretch_factor=float(time_stretch_factor),
             normalize_chunk_lufs=chunk_lufs_target,
+            max_chunk_chars=max_chunk_chars,
         )
         progress.progress(70, text="Mixing voice + background…")
 
