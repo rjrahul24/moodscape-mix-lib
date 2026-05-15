@@ -314,7 +314,7 @@ def render(
     if wet_stereo is not None:
         n = min(n, wet_stereo.shape[-1])
     if settings.use_script_aware_duck:
-        bg_ducked, gain_curve_db = ducking.script_aware_duck(
+        bg_ducked, _ = ducking.script_aware_duck(
             bg_fx[..., :n],
             voice_mono[:n],
             sr,
@@ -341,7 +341,6 @@ def render(
             release_ms=settings.duck_release_ms,
             lookahead_ms=settings.duck_lookahead_ms,
         )
-        gain_curve_db = None
 
     # 7b. Reverb ducking. Only relevant when the reverb send is active.
     if wet_stereo is not None and (

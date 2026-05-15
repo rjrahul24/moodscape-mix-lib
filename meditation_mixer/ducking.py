@@ -137,25 +137,6 @@ def freq_selective_duck(
     return out
 
 
-# Backward-compatible name (old `duck()` signature → new freq-selective duck
-# with the prior `depth` argument mapped to a sensible `range_db`).
-def duck(
-    bg: np.ndarray, voice_mono: np.ndarray, sr: int,
-    depth: float = 0.5,
-    attack_ms: float = 15.0,
-    release_ms: float = 500.0,
-) -> np.ndarray:
-    """Compatibility shim. `depth` 0..1 maps to range_db 0..-18 dB."""
-    range_db = -18.0 * float(np.clip(depth, 0.0, 1.0))
-    if bg.ndim == 1:
-        bg = np.stack([bg, bg], axis=0)
-    return freq_selective_duck(
-        bg, voice_mono, sr,
-        range_db=range_db,
-        attack_ms=attack_ms,
-        release_ms=release_ms,
-    )
-
 
 # ----- Script-aware deterministic ducking ---------------------------- #
 
@@ -351,19 +332,6 @@ def script_aware_gain_db(
 
     return g_db
 
-
-def combine_min_gain_db(*curves: np.ndarray) -> np.ndarray:
-    """Take the most-restrictive (most-negative) gain in dB at each
-    sample. Used for raw safety-net combination of curves that all
-    represent "additional ducking" (i.e. never positive).
-    """
-    if not curves:
-        raise ValueError("combine_min_gain_db needs at least one input.")
-    n = min(c.shape[0] for c in curves)
-    out = curves[0][:n].astype(np.float32, copy=True)
-    for c in curves[1:]:
-        np.minimum(out, c[:n].astype(np.float32, copy=False), out=out)
-    return out
 
 
 def combine_script_with_reactive(

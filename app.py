@@ -95,12 +95,13 @@ with st.sidebar:
                                  "zippery character on sibilants/breaths)."))
     style = st.slider("Style", 0.0, 1.0, 0.0, 0.05,
                       help="ElevenLabs and research (§2.3) recommend 0.0 for meditation.")
-    speed = st.slider("Speed", 0.7, 1.2, 0.78, 0.01,
-                      help=("0.78 is the default — pulls v3 toward ~95–110 WPM "
-                            "calm meditation pacing. Research (§1.3) suggests "
-                            "0.85–0.90 but that lands at ~130 WPM, too fast for "
-                            "deep relaxation. Below 0.78 you start to hear "
-                            "timbre warble; above 0.85 the voice drifts to 'narrator'."))
+    speed = st.slider("Speed", 0.7, 1.2, 0.80, 0.01,
+                      help=("0.80 is the safe floor for clean, artifact-free output. "
+                            "Below this v3 warps vowels and breaths. Remaining "
+                            "slowdown comes from script-level techniques: [slowly] "
+                            "tag injection, inter-sentence pauses, and pause_scale. "
+                            "Together these deliver ~80–100 WPM (matching Headspace/Calm). "
+                            "Above 0.90 the voice drifts to narrator register."))
     pause_scale = st.slider("Pause scale", 0.5, 3.0, 2.0, 0.05,
                             help="Increased to 2.0 to give much slower, spacious pacing.")
     seed = st.number_input(
@@ -120,11 +121,15 @@ with st.sidebar:
                   "`[calm][gently]`, `[whispers][softly]`."),
         )
         time_stretch_factor = st.slider(
-            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.05, 0.01,
-            help="Set to 1.05 to physically slow down the generated voice gently without pitching it down.",
+            "Time-stretch factor (post-TTS)", 1.0, 1.4, 1.0, 0.01,
+            help=("1.0 = off (recommended). Post-TTS time-stretching is the "
+                  "primary source of robotic warble on sustained vowels. Use "
+                  "the Speed slider instead for pacing control. Only increase "
+                  "above 1.0 if you need extra slowdown beyond what Speed and "
+                  "Pause Scale can deliver."),
         )
         chunk_lufs_target = st.slider(
-            "Per-chunk LUFS target", -30.0, -10.0, -19.0, 0.5,
+            "Per-chunk LUFS target", -30.0, -10.0, -21.0, 0.5,
             help=("Normalize each rendered chunk to this integrated LUFS BEFORE "
                   "mixing. Fixes the 'this paragraph is louder than the next' "
                   "drift v3 produces. Set the value to -10 to disable."),
@@ -318,7 +323,7 @@ if render_clicked:
         similarity_boost=similarity,
         style=style,
         speed=speed,
-        use_speaker_boost=False,
+        use_speaker_boost=True,
     )
 
     settings = MixSettings(

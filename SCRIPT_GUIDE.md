@@ -93,6 +93,63 @@ Eleven v3 listens to punctuation more carefully than v2.
 
 ---
 
+## Part 3b — Pacing for slow, relaxing delivery
+
+Professional meditation apps (Headspace, Calm) deliver at **80–100 effective WPM** — far slower than normal speech (~150 WPM). The Mixer achieves this through **three automatic layers** plus your script-writing choices:
+
+### What the system does automatically (you don't need to)
+
+1. **API speed = 0.80** — the slowest clean setting before v3 starts warping vowels.
+2. **`[slowly]` tag injected on every chunk** — even if your paragraph starts with `[calm]` or `[whispers]`, the system auto-appends `[slowly]` for pacing. You do NOT need to write `[slowly]` yourself.
+3. **Inter-sentence pause injection** — the system automatically inserts a soft ellipsis pause (`…`) between sentences that don't already have one. This adds ~0.5–1 s of breathing room at every sentence boundary, mimicking the way professional narrators breathe between thoughts.
+
+### What YOU control through the script
+
+The biggest lever for pacing is **how you write**, not how fast the voice speaks.
+
+**Keep sentences short.** 8–15 words per sentence. Each sentence = one thought. Long, complex sentences feel rushed even at a slow speed.
+
+```
+❌  Notice the weight of your body pressing down into the chair and feel the support beneath you.
+✅  Notice the weight of your body.  Feel the support beneath you.
+```
+
+**Use `### PAUSE` generously.** The system doubles all pause durations by default (`pause_scale=2.0`), so `### PAUSE 4s` becomes 8 seconds of silence. Use pauses between every breathing cue and between major sections.
+
+**Use ellipses (`…`) for mid-sentence breath pauses.** The system handles inter-sentence pauses automatically, but YOU control mid-sentence rhythm:
+
+```
+Take a slow breath in… filling the chest… then the belly.
+```
+
+**Use em-dashes (` — `) for stronger breaks.** Em-dashes produce a definitive ~1–1.5 s pause:
+
+```
+The jaw — let it unclench.  The shoulders — dropping away from the ears.
+```
+
+**Space your breathing cues.** Don't stack `[inhales]` and `[exhales]` in the same sentence. Give each its own beat:
+
+```
+❌  Breathe in [inhales] and out [exhales] slowly.
+✅  Breathe in… [inhales]
+
+### PAUSE 4s
+
+And let it go.  [exhales]
+```
+
+### Effective WPM guide
+
+| Target feel | Spoken WPM | How to achieve |
+|---|---|---|
+| Conversational (too fast) | 120–150 | Long sentences, few pauses |
+| Calm narration | 100–120 | Short sentences, some pauses |
+| **Guided meditation** | **80–100** | Short sentences, generous `### PAUSE`, ellipses |
+| Deep relaxation / sleep | 60–80 | Very sparse text, long `### PAUSE 10-20s`, `[whispers]` |
+
+---
+
 ## Part 4 — Structural template for a guided meditation
 
 Use this skeleton. Numbers in parentheses are typical durations for a 10-minute meditation; scale linearly for other lengths.

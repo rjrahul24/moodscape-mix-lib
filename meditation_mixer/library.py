@@ -54,23 +54,3 @@ def load_audio(path: Path, target_sr: int = SAMPLE_RATE) -> tuple[np.ndarray, in
     if audio.ndim == 1:
         audio = audio[np.newaxis, :]
     return audio.astype(np.float32), target_sr
-
-
-def to_mono(audio: np.ndarray) -> np.ndarray:
-    """Downmix (channels, samples) -> (samples,)."""
-    if audio.ndim == 1:
-        return audio
-    return audio.mean(axis=0)
-
-
-def to_stereo(audio: np.ndarray) -> np.ndarray:
-    """Ensure shape is (2, samples)."""
-    if audio.ndim == 1:
-        return np.stack([audio, audio], axis=0)
-    if audio.shape[0] == 1:
-        return np.repeat(audio, 2, axis=0)
-    if audio.shape[0] == 2:
-        return audio
-    # fold any >2-channel down to stereo by averaging
-    mono = audio.mean(axis=0)
-    return np.stack([mono, mono], axis=0)

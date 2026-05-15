@@ -36,22 +36,6 @@ def _equal_power_curves(n: int) -> tuple[np.ndarray, np.ndarray]:
     return np.cos(t * np.pi / 2.0).astype(np.float32), np.sin(t * np.pi / 2.0).astype(np.float32)
 
 
-def _equal_power_crossfade(a: np.ndarray, b: np.ndarray, n: int) -> np.ndarray:
-    """Crossfade the last n samples of a with the first n samples of b.
-
-    Operates on (channels, samples) arrays. Returns concatenated audio of length
-    a.shape[-1] + b.shape[-1] - n. Used by callers that don't need the
-    pre-allocated O(N) loop_to_length path.
-    """
-    n = min(n, a.shape[-1], b.shape[-1])
-    if n <= 0:
-        return np.concatenate([a, b], axis=-1)
-    fade_out, fade_in = _equal_power_curves(n)
-    head = a[..., :-n]
-    tail = b[..., n:]
-    cross = a[..., -n:] * fade_out + b[..., :n] * fade_in
-    return np.concatenate([head, cross, tail], axis=-1)
-
 
 def fit_to_length(
     bg: np.ndarray,
@@ -152,13 +136,6 @@ def fit_to_length(
         "looped", loops, source_s, target_s, xfade * 1000.0 / sr,
     )
 
-
-# Backward-compatible wrapper used elsewhere; returns just the audio.
-def loop_to_length(
-    bg: np.ndarray, sr: int, target_samples: int, crossfade_ms: float = 500.0,
-) -> np.ndarray:
-    audio, _ = fit_to_length(bg, sr, target_samples, crossfade_ms=crossfade_ms)
-    return audio
 
 
 def apply_fades(audio: np.ndarray, sr: int,

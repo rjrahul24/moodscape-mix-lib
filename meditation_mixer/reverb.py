@@ -179,26 +179,3 @@ def convolution_reverb_split(
     wet = np.stack([wet_l, wet_r], axis=0).astype(np.float32)
     dry_stereo = np.stack([dry_mono, dry_mono], axis=0).astype(np.float32)
     return dry_stereo, wet
-
-
-def convolution_reverb(
-    dry_mono: np.ndarray,
-    sr: int,
-    ir_path: Path | None = None,
-    wet_db: float = -20.0,
-    pre_delay_ms: float = 25.0,
-    ir_hpf_hz: float = 250.0,
-) -> np.ndarray:
-    """Wet+dry stereo signal from a mono dry voice convolved with `ir_path`.
-
-    Backward-compatible wrapper. Prefer `convolution_reverb_split` when
-    you need to time-vary the wet level (e.g. reverb ducking).
-    """
-    dry_stereo, wet = convolution_reverb_split(
-        dry_mono, sr,
-        ir_path=ir_path,
-        pre_delay_ms=pre_delay_ms,
-        ir_hpf_hz=ir_hpf_hz,
-    )
-    wet_gain = 10.0 ** (wet_db / 20.0)
-    return dry_stereo + wet * wet_gain

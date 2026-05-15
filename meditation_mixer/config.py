@@ -47,5 +47,3 @@ CHUNK_MAX_CHARS = 800
 
 # Legacy fallback for extended chunking up to 4400 chars.
 CHUNK_MAX_CHARS_EXTENDED = 4400
-
-CHUNK_MIN_CHARS = 250
