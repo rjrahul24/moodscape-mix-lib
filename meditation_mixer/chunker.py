@@ -33,6 +33,16 @@ _PAUSE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Alternative pause syntax from the one-sentence-per-line format:
+#   [pause for 5 seconds]  /  (pause for 3 s)  /  {silence 10 seconds}
+# This makes the chunker accept scripts written in the style of script.txt
+# alongside the canonical ### PAUSE Xs format.
+_INLINE_PAUSE_RE = re.compile(
+    r"^\s*(?:\(|\[|\{)\s*(?:pause|silence)\s*(?:for)?\s*"
+    r"(?P<n>\d+(?:\.\d+)?)\s*(?P<u>seconds?|secs?|s)\s*(?:\)|\]|\})\s*$",
+    re.IGNORECASE,
+)
+
 # --- Markdown stripping (safety net) -------------------------------- #
 # TTS models interpret markdown symbols as literal text or timing cues,
 # resulting in robotic beats and vocalised bullet characters. The
@@ -100,6 +110,8 @@ Chunk = SpeechChunk | PauseChunk
 
 def _parse_pause(line: str) -> float | None:
     m = _PAUSE_RE.match(line)
+    if not m:
+        m = _INLINE_PAUSE_RE.match(line)
     if not m:
         return None
     n = float(m.group("n"))
@@ -220,14 +232,21 @@ def chunk_script(
     """Parse a script into an ordered list of speech and pause chunks.
 
     Adjacent paragraphs are merged into the same speech chunk until adding
-    the next paragraph would exceed `max_chars`. A pause marker breaks the
-    current speech chunk. Any single paragraph longer than `hard_max_chars`
-    is sentence-split so no TTS request ever exceeds v3's 5 000-char limit.
+    the next paragraph would exceed `max_chars`. A pause marker (either
+    ``### PAUSE Xs`` or ``[pause for Xs]``) breaks the current speech
+    chunk. Any single paragraph longer than `hard_max_chars` is sentence-
+    split so no TTS request ever exceeds v3's 5 000-char limit.
 
-    `pause_scale` multiplies every `### PAUSE Xs` duration uniformly — a
-    single knob for "stretch all breathing room" without rewriting the
-    script. Use values >1 for slower/more spacious meditations, <1 for
-    tighter ones. 1.0 keeps the script's literal pause lengths.
+    This design follows the pattern used by the reference
+    ``eleven_meditation_tts.py``: all text between pause markers is kept
+    together as one TTS call. This gives v3 enough context to maintain
+    stable voice timbre (preventing drift) while pauses provide natural
+    breathing room between sections.
+
+    `pause_scale` multiplies every pause duration uniformly — a single
+    knob for "stretch all breathing room" without rewriting the script.
+    Use values >1 for slower/more spacious meditations, <1 for tighter
+    ones. 1.0 keeps the script's literal pause lengths.
     """
     # Safety net: strip common markdown formatting (bold, italic, headings,
     # bullets, numbered lists) that users may paste in.  `### PAUSE` lines

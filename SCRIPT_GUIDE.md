@@ -8,7 +8,7 @@ These are non-negotiable. The Mixer's parser depends on them.
 
 1. **Output is plain text only.** No markdown headings, no bullets, no preamble like *"Here is your script…"*, no closing remarks. Just the meditation, ready to paste.
 2. **One paragraph per beat.** Each paragraph is a single TTS chunk. Separate paragraphs with **one blank line**. Do not indent.
-3. **Long pauses use the exact syntax `### PAUSE Xs`** on a line by itself, surrounded by blank lines. `Xs` is seconds (e.g. `### PAUSE 8s`); `Xms` is milliseconds. These are *programmatic silence* — they cost nothing and are exact to the millisecond. Use them for any pause **longer than ~2 seconds**.
+3. **Long pauses use `### PAUSE Xs` or `[pause for X seconds]`** on a line by itself, surrounded by blank lines. `Xs` is seconds (e.g. `### PAUSE 8s` or `[pause for 8 seconds]`); `Xms` is milliseconds. These are *programmatic silence* — they cost nothing and are exact to the millisecond. Use them for any pause **longer than ~2 seconds**.
 4. **Short pauses (≤ 2 s) use punctuation, not tags.** Specifically:
    - `…` (ellipsis) — soft hesitation, breath-length pause, ~0.5–1 s
    - `—` (em-dash, surrounded by spaces) — stronger break, ~1–1.5 s
@@ -20,6 +20,61 @@ These are non-negotiable. The Mixer's parser depends on them.
 8. **No `<break>` tags, no SSML, no `[long pause]` repeated 5 times.** Pauses go through `### PAUSE Xs` only. ElevenLabs explicitly warns that `<break>` and repeated pause tags cause speed-ups and audio artifacts.
 9. **No stage directions outside tags.** Don't write *"(softly)"* or *"--in a quiet voice--"*. The model only obeys things inside `[…]` and `### PAUSE`.
 10. **Total length budget:** 5-min meditation ≈ 600 spoken words ≈ 3,500 characters of speech. 10-min ≈ 1,200 words ≈ 7,000 chars. 20-min ≈ 2,200 words ≈ 13,000 chars. Add `### PAUSE` time on top.
+---
+
+## Part 1b — Sentence-per-line format with `[pause for]` syntax (alternative)
+
+The Mixer also supports `[pause for X seconds]` as an alternative to `### PAUSE Xs`. This pairs naturally with a **sentence-per-line** writing style where related sentences sit on consecutive lines (no blank line between them) and pauses separate the groups.
+
+**How it works:** all sentences between two pause markers are merged into a single TTS chunk. This gives ElevenLabs v3 enough text context to maintain a stable voice (preventing drift), while the explicit pauses provide natural breathing room between sections. A 300 ms micro-silence is also inserted between chunks automatically for unhurried pacing.
+
+**Example (sentence-per-line with `[pause for]`):**
+```
+[pause for 5 seconds]
+
+Hello there.
+You have made it.
+Day ten.
+You have completed this full course.
+That is a real achievement.
+
+[pause for 5 seconds]
+
+Today... is about moving forward lightly.
+
+[pause for 10 seconds]
+
+Take plenty of time to find your seat today.
+This is our longest session.
+So make sure you are truly comfortable.
+Supported.
+Stable.
+Dignified.
+
+[pause for 40 seconds]
+
+Let your hands rest heavy.
+Soften the belly.
+Unclench the jaw.
+And when you are ready... gently close your eyes.
+```
+
+**Key rules for this format:**
+- **Group related sentences** on consecutive lines (no blank line between them). They become one TTS chunk.
+- **Separate groups with `[pause for X seconds]`** on its own line, surrounded by blank lines.
+- **Use `...` (ellipses)** within a sentence for soft mid-sentence pauses.
+- The system auto-prepends `[soft][slowly]` if no tone tag is present. You can still use tone tags if you want explicit control.
+
+**When to use which format:**
+
+| | Paragraph format (`### PAUSE`) | Sentence-per-line (`[pause for]`) |
+|---|---|---|
+| **Best for** | Rich, guided meditations with tone tags, breath cues, and emotional variety | Simple, calm meditations that rely on natural pacing and silence |
+| **Pacing control** | Ellipses, em-dashes, tone tags | Pauses between groups, `...` within sentences |
+| **TTS chunks** | 4–8 sentences merged per chunk (800 char target) | All sentences between pauses merged into one chunk |
+| **Tone tags** | Required at the start of each paragraph | Optional (auto-prepended if absent) |
+
+Both formats support `pause_scale` (the system-wide pause multiplier) and all the same audio tags (`[exhales]`, `[inhales]`, etc.).
 
 ---
 

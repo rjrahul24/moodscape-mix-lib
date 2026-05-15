@@ -203,6 +203,14 @@ with st.sidebar:
     music_treble_freq_hz = st.slider("Treble freq (Hz)", 3000.0, 6000.0, 4500.0, 100.0,
                                      help="High-shelf cutoff. 4000–5000 Hz bypasses the fundamental voice band (200–3000 Hz).")
 
+    st.markdown("**Voice level**")
+    voice_gain_db = st.slider(
+        "Voice gain (dB)", -12.0, 0.0, -1.5, 0.5,
+        help=("Attenuate the voice before summing with music. -1.5 dB slightly "
+              "tames the ElevenLabs output to a calm level. "
+              "Set to 0.0 to pass the voice through at full level."),
+    )
+
     st.markdown("**Voice processing (off by default — clean ElevenLabs output)**")
     st.caption(
         "All voice post-processing is disabled by default. The previous "
@@ -327,6 +335,7 @@ if render_clicked:
     )
 
     settings = MixSettings(
+        voice_gain_db=voice_gain_db,
         bg_gain_db=bg_gain_db,
         duck_range_db=duck_range_db,
         duck_release_ms=duck_release_ms,

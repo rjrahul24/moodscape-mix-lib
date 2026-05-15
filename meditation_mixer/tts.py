@@ -569,6 +569,7 @@ def synthesize_script(
     time_stretch_factor: float = 1.0,
     normalize_chunk_lufs: float | None = -21.0,
     max_chunk_chars: int | None = None,
+    inter_chunk_silence_ms: float = 300.0,
 ) -> tuple[np.ndarray, int, dict]:
     """Render a full meditation script.
 
@@ -593,6 +594,11 @@ def synthesize_script(
          `speed` setting instead. Leave at 1.0 for the cleanest output;
          only enable if you really need extra slowdown beyond what
          `speed` and `pause_scale` can deliver.
+      4. Inter-chunk silence (default 300 ms) — a short breathing gap
+         appended after each speech chunk. Inspired by the reference
+         `eleven_meditation_tts.py`'s `extra_pause_seconds` parameter.
+         Gives a consistent, natural micro-pause between sentences that
+         makes pacing feel unhurried without relying on long pauses.
 
     Pieces are then concatenated with equal-power crossfades.
 
@@ -705,6 +711,15 @@ def synthesize_script(
 
         pieces.append(y)
         piece_kinds.append("speech")
+
+        # Inter-chunk breathing gap.  Inspired by the reference
+        # eleven_meditation_tts.py's extra_pause_seconds — a small
+        # silence after each speech chunk gives consistent, natural
+        # micro-pauses between sentences.
+        if inter_chunk_silence_ms > 0:
+            gap_n = int(round(SAMPLE_RATE * inter_chunk_silence_ms / 1000.0))
+            pieces.append(np.zeros(gap_n, dtype=np.float32))
+            piece_kinds.append("pause")
 
     # Equal-power crossfade between every adjacent piece (speech↔speech,
     # speech↔pause, pause↔speech). Eliminates the boundary clicks/drops

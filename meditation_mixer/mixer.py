@@ -43,6 +43,11 @@ from .config import (
 
 @dataclass
 class MixSettings:
+    # Voice level — applied after the voice chain, before summing with
+    # music.  -1.5 dB slightly tames the ElevenLabs output to a calm,
+    # non-pinching level without making the music overpower the voice.
+    voice_gain_db: float = -1.5
+
     # Music level + ducking
     bg_gain_db: float = -11.0
     duck_threshold_db: float = -30.0
@@ -371,6 +376,13 @@ def render(
     voice_stereo = dry_stereo[..., :n]
     if wet_ducked is not None:
         voice_stereo = voice_stereo + wet_ducked
+
+    # Apply voice gain.  A negative value (default -3.0 dB) pulls the
+    # voice back from the "hot" default ElevenLabs level so it sits at a
+    # calm, stable volume atop the music bed without pinching.
+    if abs(settings.voice_gain_db) > 0.01:
+        voice_lin = 10.0 ** (settings.voice_gain_db / 20.0)
+        voice_stereo = voice_stereo * np.float32(voice_lin)
 
     # 8. Sum to a stereo pre-master.
     premaster = voice_stereo[..., :n] + bg_ducked[..., :n]
