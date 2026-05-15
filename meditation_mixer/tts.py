@@ -57,26 +57,19 @@ CHUNK_MIN_FOR_RELIABILITY = 100
 # Meditation defaults, tuned to keep the ElevenLabs output clean and crisp.
 # We deliberately do NOT post-process the voice (no time-stretch, no EQ, no
 # reverb by default). All pacing comes from the API itself:
-#  - stability 0.65 — slightly above "Natural" (0.50). Audio tags still
-#    respond (the >=0.75 "Robust" threshold ignores them); the extra 0.15
-#    damps prosody jitter on long meditations without flattening tags.
-#    (Ref: Optimizations12.md §2.3 recommends 0.65–0.85.)
-#  - similarity_boost 0.80 — locks in the voice timbre.  Acts as the
-#    acoustic anchor the research describes: forces the neural network to
-#    heavily weight the target speaker's specific timbre.
-#    (Ref: Optimizations12.md §2.3 recommends 0.75–0.90.)
+#  - stability 0.50 — "Natural". Ensures the voice maintains emotional warmth 
+#    and does not sound 'dead' or flattened over time.
+#  - similarity_boost 0.70 — locks in the voice timbre without introducing 
+#    distortion or artifacts on sibilants/breaths.
 #  - style 0.0 — ElevenLabs explicitly recommends 0.0 for meditation.
-#    (Ref: Optimizations12.md §2.3 recommends 0.0–0.10.)
 #  - speed 0.78 — pulls v3's typical ~150 WPM down toward the Tamara
 #    Levitt / Andy Puddicombe ~95-110 WPM range using ONLY the API
-#    slowdown. The research suggests 0.85–0.90, but that lands at ~130
-#    WPM — too fast for deep relaxation. 0.78 was empirically validated.
-#    (Ref: Optimizations12.md §1.3.)
+#    slowdown.
 #  - speaker_boost True — slightly improves perceived similarity to the
 #    original voice on long-form content; cost-free.
 MEDITATION_VOICE_SETTINGS = VoiceSettings(
-    stability=0.65,
-    similarity_boost=0.80,
+    stability=0.50,
+    similarity_boost=0.70,
     style=0.0,
     speed=0.78,
     use_speaker_boost=True,
@@ -93,8 +86,8 @@ DEFAULT_TONE_PRESET = "[soft][slowly]"
 # Named presets matching ElevenLabs' v3 mode labels.
 STABILITY_PRESETS: dict[str, float] = {
     "Creative": 0.30,   # most expressive, can drift
-    "Natural": 0.50,    # balanced, audio tags work
-    "Meditative": 0.65, # HIGHLY RECOMMENDED: highly stable, limits drift, keeps tags
+    "Natural": 0.50,    # HIGHLY RECOMMENDED: balanced, maintains warmth, keeps tags
+    "Meditative": 0.65, # highly stable, limits drift, keeps tags
     "Robust": 0.80,     # most stable, IGNORES audio tags
 }
 

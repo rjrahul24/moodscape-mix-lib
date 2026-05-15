@@ -16,7 +16,7 @@ These are non-negotiable. The Mixer's parser depends on them.
    - `,` (comma) — slight in-line pause
 5. **Audio tags use square brackets**, lower-case, at the position where the effect should start. Examples: `[soft]`, `[whispers]`, `[exhales]`. Tags **never** appear inside another tag.
 6. **Every paragraph starts with a tone tag.** The first token of each paragraph is a tone-setting tag like `[soft]`, `[calm]`, `[serene]`, `[warmly]`, or `[whispers]`. Tone tags fade across paragraphs in v3, so they **must be re-asserted at the start of each one**.
-7. **Per-paragraph length: 250–1,200 characters.** Below 250 chars v3 produces unstable prosody; the Mixer hard-caps any single paragraph at 4,500 chars and will sentence-split anything longer. Aim for 4–10 sentences per paragraph.
+7. **Per-paragraph length: 250–800 characters.** Below 250 chars v3 produces unstable prosody; chunks above 800 chars are prone to vocal drift. Aim for 4–8 sentences per paragraph.
 8. **No `<break>` tags, no SSML, no `[long pause]` repeated 5 times.** Pauses go through `### PAUSE Xs` only. ElevenLabs explicitly warns that `<break>` and repeated pause tags cause speed-ups and audio artifacts.
 9. **No stage directions outside tags.** Don't write *"(softly)"* or *"--in a quiet voice--"*. The model only obeys things inside `[…]` and `### PAUSE`.
 10. **Total length budget:** 5-min meditation ≈ 600 spoken words ≈ 3,500 characters of speech. 10-min ≈ 1,200 words ≈ 7,000 chars. 20-min ≈ 2,200 words ≈ 13,000 chars. Add `### PAUSE` time on top.
@@ -194,7 +194,7 @@ This is exactly the format the Mixer expects. Notice: every paragraph starts wit
 |---|---|---|
 | `[long pause]` written inline 5 times in a row | Causes v3 prosody artifacts; pause length is unpredictable | Use `### PAUSE 8s` on its own line |
 | `<break time="5s"/>` SSML tag | v2 only, capped at 3 s; ignored on v3 | Use `### PAUSE 5s` |
-| One giant 4,000-word paragraph | Above the v3 5,000-char ceiling; will be sentence-split, losing your intended breath points | Break into paragraphs of 4–10 sentences |
+| One giant 4,000-word paragraph | Far above the recommended 800-char limit for maintaining vocal warmth; will be sentence-split, losing your intended breath points | Break into paragraphs of 4–8 sentences |
 | Tone tag only on paragraph 1 | Tags fade across paragraphs in v3; later paragraphs lose the soft register | Start every paragraph with a tone tag |
 | Stage directions like `(softly)` or `*pauses*` | The model speaks them aloud | Use `[soft]` or `### PAUSE Xs` |
 | `[whispers]` for an entire 15-minute meditation | Whispered TTS is fatiguing and unintelligible at length | Use `[soft]` as the default; `[whispers]` for short intimate beats |

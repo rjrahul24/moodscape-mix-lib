@@ -40,19 +40,12 @@ DEFAULT_SEED = 42
 
 SUPPORTED_BG_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aiff", ".aif"}
 
-# Script chunking. Every chunk boundary is a place where v3 prosody and
-# timbre can drift, so we keep chunks as LARGE as the API allows. v3's
-# hard per-request limit is 5000 chars; we cap merging at 4400 to stay
-# safely under that. Most meditation paragraphs between `### PAUSE`
-# markers will now collapse into a single TTS call, eliminating in-section
-# drift entirely. (Drift across `### PAUSE` boundaries is handled
-# separately via request_id stitching in tts.py.) Below ~250 chars v3
-# starts to wobble, so we still warn under that threshold.
-CHUNK_MAX_CHARS = 4400
+# Script chunking. v3 performs best with chunks under 800 characters to
+# maintain emotional warmth and prevent vocal drift on long passages.
+# Below ~250 chars v3 starts to wobble, so we still warn under that threshold.
+CHUNK_MAX_CHARS = 800
 
-# Conservative chunking: 800 chars per chunk, as recommended by
-# Optimizations12.md §2.2 for users experiencing attention-decay drift
-# on very long meditations. Opt-in via the UI "Chunking strategy" toggle.
-CHUNK_MAX_CHARS_CONSERVATIVE = 800
+# Legacy fallback for extended chunking up to 4400 chars.
+CHUNK_MAX_CHARS_EXTENDED = 4400
 
 CHUNK_MIN_CHARS = 250

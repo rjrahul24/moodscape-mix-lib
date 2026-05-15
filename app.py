@@ -10,7 +10,7 @@ from elevenlabs.types import VoiceSettings
 
 from meditation_mixer import cache, library, reverb, tts
 from meditation_mixer.config import (
-    CHUNK_MAX_CHARS_CONSERVATIVE,
+    CHUNK_MAX_CHARS_EXTENDED,
     DEFAULT_MODEL_ID,
     DEFAULT_SEED,
     ELEVENLABS_API_KEY,
@@ -75,24 +75,23 @@ with st.sidebar:
     stability_preset = st.radio(
         "Stability preset",
         options=list(tts.STABILITY_PRESETS.keys()),
-        index=2,  # Meditative
+        index=1,  # Natural
         horizontal=True,
         help=(
             "Creative (0.30): most expressive, can drift on long sessions. "
-            "Natural (0.50): balanced. "
-            "Meditative (0.65): RECOMMENDED. Locks voice to prevent drift, honors tags. "
+            "Natural (0.50): RECOMMENDED. Balanced, maintains warmth, honors tags. "
+            "Meditative (0.65): highly stable, limits drift, keeps tags. "
             "Robust (0.80): most stable but IGNORES [whispers]/[soft]/[breathes] tags."
         ),
     )
     stability_default = tts.STABILITY_PRESETS[stability_preset]
     stability = st.slider("Stability (fine-tune)", 0.0, 1.0, stability_default, 0.05,
                           help="≥0.75 makes v3 ignore audio tags; ≤0.40 may drift. "
-                               "Research recommends 0.65–0.85 for meditation (Optimizations12 §2.3).")
-    similarity = st.slider("Similarity boost", 0.0, 1.0, 0.80, 0.01,
-                           help=("0.80 is the production default — acts as the acoustic "
+                               "We recommend 0.50 (Natural) to maintain emotional warmth.")
+    similarity = st.slider("Similarity boost", 0.0, 1.0, 0.70, 0.01,
+                           help=("0.70 is the optimal default — acts as the acoustic "
                                  "anchor that locks the voice timbre across chunks. "
-                                 "Research recommends 0.75–0.90 (§2.3). Values "
-                                 "above ~0.80 introduce timbral artifacts (a "
+                                 "Values above ~0.80 introduce timbral artifacts (a "
                                  "zippery character on sibilants/breaths)."))
     style = st.slider("Style", 0.0, 1.0, 0.0, 0.05,
                       help="ElevenLabs and research (§2.3) recommend 0.0 for meditation.")
@@ -144,18 +143,16 @@ with st.sidebar:
         )
         chunking_strategy = st.radio(
             "Chunking strategy",
-            options=["Large (default)", "Conservative (research)"],
+            options=["Optimal (default)", "Extended (legacy)"],
             index=0,
             horizontal=True,
-            help=("Large (4400 chars): fewer chunk boundaries, less inter-chunk "
-                  "drift — empirically validated default. "
-                  "Conservative (800 chars): prevents intra-chunk attention decay "
-                  "as recommended by Optimizations12 §2.2. Use if you experience "
-                  "voice drift on very long (>15 min) meditations."),
+            help=("Optimal (800 chars): best for maintaining emotional warmth "
+                  "and preventing vocal drift on long passages. "
+                  "Extended (4400 chars): legacy fallback for fewer chunk boundaries."),
         )
         max_chunk_chars = (
-            CHUNK_MAX_CHARS_CONSERVATIVE
-            if chunking_strategy.startswith("Conservative")
+            CHUNK_MAX_CHARS_EXTENDED
+            if chunking_strategy.startswith("Extended")
             else None  # None = use the default from config
         )
 

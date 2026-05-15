@@ -7,7 +7,12 @@
       "Bash(python3 -c \"from meditation_mixer import tts; [print\\(v.voice_id, '|', v.label\\) for v in tts.list_voices\\(\\)]\")",
       "Bash(gh --version)",
       "Bash(gh auth *)",
-      "Bash(git --version)"
+      "Bash(git --version)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('meditation_mixer/tts.py'\\).read\\(\\)\\); ast.parse\\(open\\('meditation_mixer/mixer.py'\\).read\\(\\)\\); ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('All three files parse OK'\\)\")",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['meditation_mixer/tts.py','meditation_mixer/mixer.py','meditation_mixer/mastering.py','meditation_mixer/config.py','app.py']]; print\\('OK'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
