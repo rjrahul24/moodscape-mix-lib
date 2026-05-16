@@ -9,8 +9,8 @@ Two layers of ducking:
    (including off-script breaths).
 
 2. `script_aware_duck` — deterministic curve generated from phrase
-   timestamps. Descends predictively 300 ms BEFORE each phrase onset,
-   holds -9 dB during the phrase, releases over 700 ms with a cubic
+   timestamps. Descends predictively 500 ms BEFORE each phrase onset,
+   holds -9 dB during the phrase, releases over 1200 ms with a cubic
    S-curve, and LIFTS the music +1.5 dB during long pauses so the bed
    "breathes" with the script. Far more musical than a reactive duck on
    long silences; impossible to implement reactively.
@@ -233,13 +233,13 @@ def script_aware_gain_db(
     duration_samples: int,
     sr: int,
     phrases: list[tuple[float, float]],
-    pre_descent_ms: float = 300.0,
-    attack_ms: float = 250.0,
-    release_ms: float = 700.0,
+    pre_descent_ms: float = 500.0,
+    attack_ms: float = 450.0,
+    release_ms: float = 1200.0,
     duck_db: float = -9.0,
     lift_db: float = 1.5,
     lift_pause_s: float = 1.5,
-    smooth_hz: float = 8.0,
+    smooth_hz: float = 5.0,
 ) -> np.ndarray:
     """Build a deterministic music-gain envelope (in dB) from phrase
     timestamps. Positive lift during long pauses, smooth S-curve descent
@@ -400,13 +400,13 @@ def script_aware_duck(
     voice_mono: np.ndarray,
     sr: int,
     phrases: list[tuple[float, float]] | None = None,
-    pre_descent_ms: float = 300.0,
-    attack_ramp_ms: float = 250.0,
-    release_ms: float = 700.0,
+    pre_descent_ms: float = 500.0,
+    attack_ramp_ms: float = 450.0,
+    release_ms: float = 1200.0,
     duck_db: float = -9.0,
     lift_db: float = 1.5,
     lift_pause_s: float = 1.5,
-    smooth_hz: float = 8.0,
+    smooth_hz: float = 5.0,
     duck_band_hz: tuple[float, float] = (200.0, 4000.0),
     # Reactive safety-net params:
     reactive_threshold_db: float = -30.0,

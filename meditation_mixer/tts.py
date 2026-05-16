@@ -107,7 +107,7 @@ class Voice:
         return f"{self.name} ({self.category})" if self.category else self.name
 
 
-# Curated top 5 ElevenLabs v3 voices for meditation, selected from ElevenLabs'
+# Curated ElevenLabs v3 voices for meditation, selected from ElevenLabs'
 # official meditation collection (elevenlabs.io/voice-library/meditation),
 # third-party reviews (nerdynav.com, json2video catalog), and the voice
 # previously recommended in this project. All five work with `eleven_v3` and
@@ -143,6 +143,14 @@ MEDITATION_VOICES: list[Voice] = [
         name="Archer — Guided Meditation & Narration",
         category="male · narration",
     ),
+    Voice(
+        voice_id="Qggl4b0xRMiqOwhPtVWT",
+        name="Clara",
+    ),
+    Voice(
+        voice_id="VhxAIIZM8IRmnl5fyeyk",
+        name="Valory",
+    ),
 ]
 
 
@@ -155,7 +163,7 @@ def _client() -> ElevenLabs:
 
 
 def list_voices() -> list[Voice]:
-    """Return the curated top 5 meditation voices for ElevenLabs v3."""
+    """Return the curated meditation voices for ElevenLabs v3."""
     return list(MEDITATION_VOICES)
 
 

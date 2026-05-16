@@ -44,16 +44,17 @@ from .config import (
 @dataclass
 class MixSettings:
     # Voice level — applied after the voice chain, before summing with
-    # music.  -1.5 dB slightly tames the ElevenLabs output to a calm,
-    # non-pinching level without making the music overpower the voice.
-    voice_gain_db: float = -1.5
+    # music.  -3.0 dB gently pulls back the ElevenLabs output to a calm,
+    # intimate level without sacrificing audio quality or making the
+    # music overpower the voice.
+    voice_gain_db: float = -3.0
 
     # Music level + ducking
-    bg_gain_db: float = -11.0
+    bg_gain_db: float = -13.0
     duck_threshold_db: float = -30.0
     duck_range_db: float = -7.0
     duck_attack_ms: float = 15.0
-    duck_release_ms: float = 500.0
+    duck_release_ms: float = 1200.0
     duck_lookahead_ms: float = 10.0
 
     # Script-aware ducking (deterministic curve from phrase timestamps).
@@ -63,8 +64,8 @@ class MixSettings:
     # ducked. This is the move that makes the music feel like it's
     # "breathing" with the voice.
     use_script_aware_duck: bool = True
-    duck_pre_descent_ms: float = 300.0
-    duck_attack_ramp_ms: float = 250.0
+    duck_pre_descent_ms: float = 500.0
+    duck_attack_ramp_ms: float = 450.0
     duck_lift_db: float = 2.0
     duck_lift_pause_s: float = 1.5
 
@@ -379,7 +380,8 @@ def render(
 
     # Apply voice gain.  A negative value (default -3.0 dB) pulls the
     # voice back from the "hot" default ElevenLabs level so it sits at a
-    # calm, stable volume atop the music bed without pinching.
+    # calm, intimate volume atop the music bed without pinching or
+    # sacrificing audio quality.
     if abs(settings.voice_gain_db) > 0.01:
         voice_lin = 10.0 ** (settings.voice_gain_db / 20.0)
         voice_stereo = voice_stereo * np.float32(voice_lin)

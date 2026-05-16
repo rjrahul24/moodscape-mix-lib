@@ -7,95 +7,115 @@
 These are non-negotiable. The Mixer's parser depends on them.
 
 1. **Output is plain text only.** No markdown headings, no bullets, no preamble like *"Here is your script…"*, no closing remarks. Just the meditation, ready to paste.
-2. **One paragraph per beat.** Each paragraph is a single TTS chunk. Separate paragraphs with **one blank line**. Do not indent.
-3. **Long pauses use `### PAUSE Xs` or `[pause for X seconds]`** on a line by itself, surrounded by blank lines. `Xs` is seconds (e.g. `### PAUSE 8s` or `[pause for 8 seconds]`); `Xms` is milliseconds. These are *programmatic silence* — they cost nothing and are exact to the millisecond. Use them for any pause **longer than ~2 seconds**.
+2. **Every line is separated by a blank line.** After each line of text, press enter **twice** to create a blank line before the next line. This is how the Mixer splits text into TTS chunks. Consecutive lines without a blank line between them get merged into a single chunk, which makes them sound rushed and reduces the calm pacing.
+
+   ✅ **Correct:**
+   ```
+   [warmly] Welcome to tonight's sleep journey.
+
+   Take a few moments to find your perfect resting position.
+   ```
+
+   ❌ **Wrong:**
+   ```
+   [warmly] Welcome to tonight's sleep journey.
+   Take a few moments to find your perfect resting position.
+   ```
+
+3. **All pauses use `[pause for X seconds]`** on a line by itself, surrounded by blank lines. These are *programmatic silence* — they cost nothing and are exact to the millisecond. Use them for any pause **longer than ~2 seconds**. Do NOT use `### PAUSE Xs` or any other pause format.
+
+   ✅ **Correct:**
+   ```
+   [soft] Notice the weight of your body.
+
+   [pause for 5 seconds]
+
+   [gentle] Feel the support beneath you.
+   ```
+
+   ❌ **Wrong:**
+   ```
+   [soft] Notice the weight of your body.
+
+   ### PAUSE 5s
+
+   [gentle] Feel the support beneath you.
+   ```
+
 4. **Short pauses (≤ 2 s) use punctuation, not tags.** Specifically:
    - `…` (ellipsis) — soft hesitation, breath-length pause, ~0.5–1 s
    - `—` (em-dash, surrounded by spaces) — stronger break, ~1–1.5 s
    - `.` (period) — sentence boundary, natural pause
    - `,` (comma) — slight in-line pause
+
 5. **Audio tags use square brackets**, lower-case, at the position where the effect should start. Examples: `[soft]`, `[whispers]`, `[exhales]`. Tags **never** appear inside another tag.
-6. **Every paragraph starts with a tone tag.** The first token of each paragraph is a tone-setting tag like `[soft]`, `[calm]`, `[serene]`, `[warmly]`, or `[whispers]`. Tone tags fade across paragraphs in v3, so they **must be re-asserted at the start of each one**.
-7. **Per-paragraph length: 250–800 characters.** Below 250 chars v3 produces unstable prosody; chunks above 800 chars are prone to vocal drift. Aim for 4–8 sentences per paragraph.
-8. **No `<break>` tags, no SSML, no `[long pause]` repeated 5 times.** Pauses go through `### PAUSE Xs` only. ElevenLabs explicitly warns that `<break>` and repeated pause tags cause speed-ups and audio artifacts.
-9. **No stage directions outside tags.** Don't write *"(softly)"* or *"--in a quiet voice--"*. The model only obeys things inside `[…]` and `### PAUSE`.
-10. **Total length budget:** 5-min meditation ≈ 600 spoken words ≈ 3,500 characters of speech. 10-min ≈ 1,200 words ≈ 7,000 chars. 20-min ≈ 2,200 words ≈ 13,000 chars. Add `### PAUSE` time on top.
----
 
-## Part 1b — Sentence-per-line format with `[pause for]` syntax (alternative)
+6. **Every line starts with a tone or pacing tag.** The first token of each line must be a tone-setting or pacing tag like `[soft]`, `[calm]`, `[gentle]`, `[slow]`, `[very slow]`, `[serene]`, `[warmly]`, or `[whispers]`. Tone and pacing tags fade within v3, so they **must be re-asserted on every line** to keep the voice slow, calm, and meditative throughout.
 
-The Mixer also supports `[pause for X seconds]` as an alternative to `### PAUSE Xs`. This pairs naturally with a **sentence-per-line** writing style where related sentences sit on consecutive lines (no blank line between them) and pauses separate the groups.
+7. **Re-assert pacing tags every 2–3 lines.** Even if you use the same tag consecutively, write it again. Vary the tags naturally (e.g. `[soft]` → `[gentle]` → `[slow]` → `[very gentle]` → `[calm]`). The goal is to **constantly remind the model to stay slow and calm**. Without frequent tag re-assertion, the voice drifts toward a faster, narrator-like register over time.
 
-**How it works:** all sentences between two pause markers are merged into a single TTS chunk. This gives ElevenLabs v3 enough text context to maintain a stable voice (preventing drift), while the explicit pauses provide natural breathing room between sections. A 300 ms micro-silence is also inserted between chunks automatically for unhurried pacing.
+   ✅ **Correct — tags on every line, varied naturally:**
+   ```
+   [warmly] Welcome to tonight's sleep journey.
 
-**Example (sentence-per-line with `[pause for]`):**
-```
-[pause for 5 seconds]
+   [soft] Take a few moments to find your perfect resting position.
 
-Hello there.
-You have made it.
-Day ten.
-You have completed this full course.
-That is a real achievement.
+   [gentle] Let the day begin to fall away from you.
 
-[pause for 5 seconds]
+   [pause for 5 seconds]
 
-Today... is about moving forward lightly.
+   [slow] Feel the weight of your body… settling into the surface beneath you.
 
-[pause for 10 seconds]
+   [very gentle] There's nowhere you need to be right now.
 
-Take plenty of time to find your seat today.
-This is our longest session.
-So make sure you are truly comfortable.
-Supported.
-Stable.
-Dignified.
+   [soft] Nothing you need to do.
 
-[pause for 40 seconds]
+   [pause for 8 seconds]
+   ```
 
-Let your hands rest heavy.
-Soften the belly.
-Unclench the jaw.
-And when you are ready... gently close your eyes.
-```
+   ❌ **Wrong — missing tags, no blank lines:**
+   ```
+   Welcome to tonight's sleep journey.
+   Take a few moments to find your perfect resting position.
+   Let the day begin to fall away from you.
+   ```
 
-**Key rules for this format:**
-- **Group related sentences** on consecutive lines (no blank line between them). They become one TTS chunk.
-- **Separate groups with `[pause for X seconds]`** on its own line, surrounded by blank lines.
-- **Use `...` (ellipses)** within a sentence for soft mid-sentence pauses.
-- The system auto-prepends `[soft][slowly]` if no tone tag is present. You can still use tone tags if you want explicit control.
+8. **Per-line length: 1–3 sentences, 60–200 characters.** Keep each line short and focused — one thought per line. This keeps the voice intimate and prevents the model from speeding up mid-chunk. Lines above 800 chars risk vocal drift.
 
-**When to use which format:**
+9. **No `<break>` tags, no SSML, no `[long pause]` repeated multiple times.** Pauses go through `[pause for X seconds]` only. ElevenLabs explicitly warns that `<break>` and repeated pause tags cause speed-ups and audio artifacts.
 
-| | Paragraph format (`### PAUSE`) | Sentence-per-line (`[pause for]`) |
-|---|---|---|
-| **Best for** | Rich, guided meditations with tone tags, breath cues, and emotional variety | Simple, calm meditations that rely on natural pacing and silence |
-| **Pacing control** | Ellipses, em-dashes, tone tags | Pauses between groups, `...` within sentences |
-| **TTS chunks** | 4–8 sentences merged per chunk (800 char target) | All sentences between pauses merged into one chunk |
-| **Tone tags** | Required at the start of each paragraph | Optional (auto-prepended if absent) |
+10. **No stage directions outside tags.** Don't write *"(softly)"* or *"--in a quiet voice--"*. The model only obeys things inside `[…]` and `[pause for]`.
 
-Both formats support `pause_scale` (the system-wide pause multiplier) and all the same audio tags (`[exhales]`, `[inhales]`, etc.).
+11. **Total length budget:** 5-min meditation ≈ 600 spoken words ≈ 3,500 characters of speech. 10-min ≈ 1,200 words ≈ 7,000 chars. 20-min ≈ 2,200 words ≈ 13,000 chars. Add pause time on top.
 
 ---
 
 ## Part 2 — Audio tag reference (verified for Eleven v3)
 
-Place the tag **just before** the speech you want it to affect. Tags are case-insensitive but lower-case keeps the script readable. Tags after the first word of a paragraph are *transient* and only affect that line — they don't reset the paragraph's overall tone.
+Place the tag **just before** the speech you want it to affect. Tags are case-insensitive but lower-case keeps the script readable.
 
-### Tone / delivery (use one at the start of every paragraph)
+### Tone / delivery tags (use at the start of EVERY line)
+
+These tags control the voice's emotional register and pacing. **Rotate through them** to keep the delivery varied yet consistently calm.
 
 | Tag | Effect | Best for |
 |---|---|---|
 | `[soft]` | Warm, low-volume delivery. The workhorse tone for guided meditation. | Default tone tag |
-| `[whispers]` | Hushed, intimate, almost breathy. | Sleep meditations, vulnerable moments |
+| `[gentle]` | Tender, careful, unhurried. | Instructions, transitions, body-scan cues |
+| `[slow]` | Noticeably reduces pace within the line. | Breathing cues, closing lines, emphasis |
+| `[very slow]` | Deeply slowed, spacious delivery. | Deep relaxation, final wind-down, sleep meditations |
+| `[very gentle]` | Extremely soft and careful. | Vulnerable moments, intimate affirmations |
 | `[calm]` | Even, measured, grounded. | Body-scan, focus meditations |
 | `[serene]` | Spacious, unhurried, slightly bright. | Open-awareness, nature visualizations |
-| `[gently]` | Tender, careful. | Instructions, transitions |
 | `[warmly]` | Friendly, embracing. | Welcomes, affirmations, lovingkindness |
+| `[whispers]` | Hushed, intimate, almost breathy. | Sleep meditations, vulnerable moments |
 | `[reassuringly]` | Steady, parental. | Anxiety meditations, "it's okay…" lines |
 | `[slowly]` | Reduces pace within the line. | Counting breaths, closing lines |
 | `[reflective]` | Inward, thoughtful. | Reframing, self-inquiry prompts |
 | `[inner monologue]` | Quieter, more private register. | Visualization, dream-like passages |
+
+**Recommended rotation for a 10-minute meditation:**
+`[warmly]` → `[soft]` → `[gentle]` → `[calm]` → `[slow]` → `[soft]` → `[very gentle]` → `[gentle]` → `[slow]` → `[very slow]` → `[soft]` → `[warmly]`
 
 ### Breath / body (use mid-line, near the verb)
 
@@ -104,12 +124,12 @@ Place the tag **just before** the speech you want it to affect. Tags are case-in
 | `[exhales]` | Audible out-breath. Single use per sentence. |
 | `[inhales]` | Audible in-breath. |
 | `[breathes]` | A complete breath cycle. |
-| `[sighs]` | A relaxed, slow sigh. Excellent at the top of a paragraph after `### PAUSE`. |
+| `[sighs]` | A relaxed, slow sigh. Strong after a pause. |
 | `[breathing heavily]` | Use sparingly — only for grounding/embodied moments. |
 | `[yawns]` | A real yawn. Strong for sleep meditations near the end. |
 | `[swallows]` | Subtle. Useful for naturalness, but use rarely. |
 
-### Pause / pacing (only inside a paragraph; for >2 s use `### PAUSE`)
+### Pause / pacing (only inside a line; for >2 s use `[pause for]`)
 
 | Tag | What it produces |
 |---|---|
@@ -124,9 +144,9 @@ Place the tag **just before** the speech you want it to affect. Tags are case-in
 
 ### How tags compose
 
-You can stack two tags at the start of a paragraph for compound delivery: `[soft] [slowly]` or `[whispers] [reflective]`. Don't stack more than two.
+You can stack two tags at the start of a line for compound delivery: `[soft][slowly]` or `[whispers][reflective]`. Don't stack more than two.
 
-You can place a transient tag mid-paragraph for a single beat: *"`[soft]` Notice the weight of your body, `[exhales]` settling."*
+You can place a transient tag mid-line for a single beat: *"`[soft]` Notice the weight of your body, `[exhales]` settling."*
 
 ---
 
@@ -138,165 +158,168 @@ Eleven v3 listens to punctuation more carefully than v2.
 |---|---|
 | `,` (comma) | Light in-line pause (~150 ms). Use generously for rhythm. |
 | `.` (period) | Full sentence boundary, natural prosody drop. |
-| `…` (ellipsis, single character) | Soft hesitation, ~0.5–1 s. The single most useful punctuation mark for meditation. Use *between thoughts within a sentence*. Don't overuse — three or four per paragraph max. |
+| `…` (ellipsis, single character) | Soft hesitation, ~0.5–1 s. The single most useful punctuation mark for meditation. Use *between thoughts within a sentence*. Don't overuse — two or three per line max. |
 | ` — ` (em-dash with spaces) | Stronger break than ellipsis. Use for definitive pause inside a sentence. |
-| Paragraph break | Full pause and prosody reset. |
-| **CAPITALIZATION** | Emphasis. **Use for at most one or two words per paragraph.** For meditation this is rare — usually you don't need it. |
+| Blank line | Full pause and prosody reset. **Required between every line.** |
+| **CAPITALIZATION** | Emphasis. **Use for at most one or two words per line.** For meditation this is rare — usually you don't need it. |
 | Repeated periods like `...` | Treated like an ellipsis. Prefer the single character `…`. |
 
 **Two spaces after a sentence** (e.g. *"Welcome.  Find a comfortable position."*) is a hint to the model to take a slightly longer breath at the sentence break. Optional but helpful.
 
 ---
 
-## Part 3b — Pacing for slow, relaxing delivery
+## Part 4 — Pacing for slow, relaxing delivery
 
 Professional meditation apps (Headspace, Calm) deliver at **80–100 effective WPM** — far slower than normal speech (~150 WPM). The Mixer achieves this through **three automatic layers** plus your script-writing choices:
 
 ### What the system does automatically (you don't need to)
 
 1. **API speed = 0.80** — the slowest clean setting before v3 starts warping vowels.
-2. **`[slowly]` tag injected on every chunk** — even if your paragraph starts with `[calm]` or `[whispers]`, the system auto-appends `[slowly]` for pacing. You do NOT need to write `[slowly]` yourself.
-3. **Inter-sentence pause injection** — the system automatically inserts a soft ellipsis pause (`…`) between sentences that don't already have one. This adds ~0.5–1 s of breathing room at every sentence boundary, mimicking the way professional narrators breathe between thoughts.
+2. **`[slowly]` tag injected on every chunk** — even if your line starts with `[calm]` or `[whispers]`, the system auto-appends `[slowly]` for pacing. You do NOT need to write `[slowly]` yourself (but adding `[slow]` or `[very slow]` gives extra emphasis).
+3. **Inter-sentence pause injection** — the system automatically inserts a soft ellipsis pause (`…`) between sentences that don't already have one. This adds ~0.5–1 s of breathing room at every sentence boundary.
 
 ### What YOU control through the script
 
 The biggest lever for pacing is **how you write**, not how fast the voice speaks.
 
-**Keep sentences short.** 8–15 words per sentence. Each sentence = one thought. Long, complex sentences feel rushed even at a slow speed.
+**Keep each line short — 1–3 sentences.** Each line = one thought. Long, complex lines feel rushed even at a slow speed.
 
 ```
 ❌  Notice the weight of your body pressing down into the chair and feel the support beneath you.
-✅  Notice the weight of your body.  Feel the support beneath you.
+
+✅  [soft] Notice the weight of your body.
+
+✅  [gentle] Feel the support beneath you.
 ```
 
-**Use `### PAUSE` generously.** The system doubles all pause durations by default (`pause_scale=2.0`), so `### PAUSE 4s` becomes 8 seconds of silence. Use pauses between every breathing cue and between major sections.
+**Use `[pause for X seconds]` generously.** The system doubles all pause durations by default (`pause_scale=2.0`), so `[pause for 4 seconds]` becomes 8 seconds of silence. Use pauses between every breathing cue and between major sections.
 
-**Use ellipses (`…`) for mid-sentence breath pauses.** The system handles inter-sentence pauses automatically, but YOU control mid-sentence rhythm:
+**Add tone/pacing tags on every line.** This is the single most important thing you can do to keep the voice slow and calm. Without tags, v3 drifts into a faster, narrator-like register after a few chunks.
 
-```
-Take a slow breath in… filling the chest… then the belly.
-```
-
-**Use em-dashes (` — `) for stronger breaks.** Em-dashes produce a definitive ~1–1.5 s pause:
+**Use ellipses (`…`) for mid-sentence breath pauses:**
 
 ```
-The jaw — let it unclench.  The shoulders — dropping away from the ears.
+[slow] Take a slow breath in… filling the chest… then the belly.
+```
+
+**Use em-dashes (` — `) for stronger breaks:**
+
+```
+[gentle] The jaw — let it unclench.  The shoulders — dropping away from the ears.
 ```
 
 **Space your breathing cues.** Don't stack `[inhales]` and `[exhales]` in the same sentence. Give each its own beat:
 
 ```
 ❌  Breathe in [inhales] and out [exhales] slowly.
-✅  Breathe in… [inhales]
 
-### PAUSE 4s
+✅  [calm] Breathe in… [inhales]
 
-And let it go.  [exhales]
+[pause for 4 seconds]
+
+[soft] And let it go.  [exhales]
 ```
 
 ### Effective WPM guide
 
 | Target feel | Spoken WPM | How to achieve |
 |---|---|---|
-| Conversational (too fast) | 120–150 | Long sentences, few pauses |
+| Conversational (too fast) | 120–150 | Long sentences, few pauses, no tags |
 | Calm narration | 100–120 | Short sentences, some pauses |
-| **Guided meditation** | **80–100** | Short sentences, generous `### PAUSE`, ellipses |
-| Deep relaxation / sleep | 60–80 | Very sparse text, long `### PAUSE 10-20s`, `[whispers]` |
+| **Guided meditation** | **80–100** | Short lines with tags, generous `[pause for]`, ellipses |
+| Deep relaxation / sleep | 60–80 | Very sparse text, long `[pause for 10 seconds]` – `[pause for 20 seconds]`, `[whispers]`, `[very slow]` |
 
 ---
 
-## Part 4 — Structural template for a guided meditation
+## Part 5 — Structural template for a guided meditation
 
 Use this skeleton. Numbers in parentheses are typical durations for a 10-minute meditation; scale linearly for other lengths.
 
 ```
-[warmly] WELCOME (15-30 s spoken)
-- Greet the listener. Invite them to get comfortable.
-- 1-2 sentences. Tone tag: [warmly] or [soft].
+[warmly] Welcome.  Find a comfortable position — somewhere you can settle in, fully supported.
 
-### PAUSE 3s
+[soft] Let the chair, the cushion, or the floor hold your weight.
 
-[gently] SETTLE-IN (60-90 s spoken)
-- Invite them to close their eyes, notice their body, drop the day.
-- Use [exhales] once, near the end of the paragraph.
+[pause for 3 seconds]
 
-### PAUSE 5s
+[gentle] When you're ready… softly close your eyes.
 
-[calm] BREATH ANCHOR (90-120 s spoken)
-- Direct attention to the breath. Cue 3-5 conscious breaths.
-- Place `[inhales]` and `[exhales]` exactly where you want the listener's breath cycle.
-- Insert `### PAUSE 4s` between cued breaths if pacing the breath count.
+[calm] Or simply let your gaze rest on a point in front of you, unfocused.
 
-### PAUSE 8s
+[soft] [exhales] And let yourself arrive here, just as you are.
 
-[soft] CORE PRACTICE (4-6 minutes spoken)
-- The meat of the meditation: body scan, visualization, lovingkindness phrases, etc.
-- 3-5 paragraphs, each starting with a tone tag.
-- `### PAUSE 8-15s` between paragraphs for absorption.
-- Re-cue the breath every 60-90 seconds with [exhales].
+[pause for 5 seconds]
 
-[reflective] BRIEF REFRAME (30-60 s spoken)
-- One short paragraph offering a frame or affirmation.
+[calm] Take a slow breath in through the nose… [inhales]
 
-### PAUSE 10s
+[soft] …filling the chest, then the belly.
 
-[soft] [slowly] CLOSING (45-60 s spoken)
-- Slowly bring attention back. Notice the body, the sounds.
-- Final invitation: "When you're ready, gently open your eyes."
-- Use [slowly] tone. End with a single sentence.
+[gentle] And then a long, easy exhale out through the mouth.  [exhales]
 
-### PAUSE 3s
+[pause for 4 seconds]
+
+[slow] Again.  In through the nose… [inhales]
+
+[very gentle] …pause at the top…
+
+[soft] and out, releasing whatever you're holding.  [exhales]
+
+[pause for 6 seconds]
+
+[gentle] Now let the breath find its own rhythm.
+
+[soft] You don't need to control it.
+
+[slow] Just notice — the rise, the fall, the small pause between.
+
+[pause for 10 seconds]
+
+[calm] Begin to scan your body, top down.
+
+[soft] Notice the crown of your head.
+
+[gentle] The forehead, soft.
+
+[slow] The jaw — let it unclench.
+
+[soft] The shoulders, dropping away from the ears.  [exhales]
+
+[pause for 8 seconds]
+
+[gentle] Move down through the chest, the belly, the lower back.
+
+[very gentle] Wherever you find tightness, you don't have to fix it.
+
+[soft] Just acknowledge it.
+
+[calm] Say, silently — "I see you.  You're welcome here."
+
+[pause for 12 seconds]
+
+[reflective] There's nothing to do right now.
+
+[soft] Nowhere to be.
+
+[very slow] Just this breath.  Just this moment.  And then the next one.
+
+[pause for 15 seconds]
+
+[soft] When you're ready, begin to notice the sounds around you.
+
+[slow] The weight of your body in the room.
+
+[gentle] Wiggle your fingers and toes, softly.
+
+[pause for 4 seconds]
+
+[warmly] And whenever you're ready… gently open your eyes.
+
+[soft] Carry this stillness with you, into whatever comes next.
+
+[pause for 3 seconds]
 ```
 
-**For sleep meditations**, replace the closing with a "drift off" arc: longer pauses (10–20 s), `[whispers]` tone, more `[yawns]` and `[exhales]`, no "open your eyes" instruction.
-
----
-
-## Part 5 — Full annotated example
-
-This is exactly the format the Mixer expects. Notice: every paragraph starts with a tone tag, pauses use `### PAUSE Xs`, ellipses and em-dashes for in-line beats.
-
-```
-[warmly] Welcome.  Find a comfortable position — somewhere you can settle in, fully supported.  Let the chair, the cushion, or the floor hold your weight.
-
-### PAUSE 3s
-
-[gently] When you're ready… softly close your eyes.  Or simply let your gaze rest on a point in front of you, unfocused.  [exhales] And let yourself arrive here, just as you are.
-
-### PAUSE 5s
-
-[calm] Take a slow breath in through the nose… [inhales] …filling the chest, then the belly.  And then a long, easy exhale out through the mouth.  [exhales]
-
-### PAUSE 4s
-
-[calm] Again.  In through the nose… [inhales] …pause at the top… and out, releasing whatever you're holding.  [exhales]
-
-### PAUSE 6s
-
-[soft] Now let the breath find its own rhythm.  You don't need to control it.  Just notice — the rise, the fall, the small pause between.
-
-### PAUSE 10s
-
-[soft] Begin to scan your body, top down.  Notice the crown of your head.  The forehead, soft.  The jaw — let it unclench.  The shoulders, dropping away from the ears.  [exhales]
-
-### PAUSE 8s
-
-[gently] Move down through the chest, the belly, the lower back.  Wherever you find tightness, you don't have to fix it.  Just acknowledge it.  Say, silently — "I see you.  You're welcome here."
-
-### PAUSE 12s
-
-[reflective] There's nothing to do right now.  Nowhere to be.  Just this breath.  Just this moment.  And then the next one.
-
-### PAUSE 15s
-
-[soft] [slowly] When you're ready, begin to notice the sounds around you.  The weight of your body in the room.  Wiggle your fingers and toes, softly.
-
-### PAUSE 4s
-
-[warmly] [slowly] And whenever you're ready… gently open your eyes.  Carry this stillness with you, into whatever comes next.
-
-### PAUSE 3s
-```
+**For sleep meditations**, replace the closing with a "drift off" arc: longer pauses (10–20 s), `[whispers]` tone, more `[yawns]` and `[exhales]`, `[very slow]`, no "open your eyes" instruction.
 
 ---
 
@@ -304,17 +327,35 @@ This is exactly the format the Mixer expects. Notice: every paragraph starts wit
 
 | Mistake | Why it breaks | Do this instead |
 |---|---|---|
-| `[long pause]` written inline 5 times in a row | Causes v3 prosody artifacts; pause length is unpredictable | Use `### PAUSE 8s` on its own line |
-| `<break time="5s"/>` SSML tag | v2 only, capped at 3 s; ignored on v3 | Use `### PAUSE 5s` |
-| One giant 4,000-word paragraph | Far above the recommended 800-char limit for maintaining vocal warmth; will be sentence-split, losing your intended breath points | Break into paragraphs of 4–8 sentences |
-| Tone tag only on paragraph 1 | Tags fade across paragraphs in v3; later paragraphs lose the soft register | Start every paragraph with a tone tag |
-| Stage directions like `(softly)` or `*pauses*` | The model speaks them aloud | Use `[soft]` or `### PAUSE Xs` |
+| `### PAUSE 5s` syntax | Deprecated; use the `[pause for]` format instead | Use `[pause for 5 seconds]` on its own line |
+| `[long pause]` written inline 5 times in a row | Causes v3 prosody artifacts; pause length is unpredictable | Use `[pause for 8 seconds]` on its own line |
+| `<break time="5s"/>` SSML tag | v2 only, capped at 3 s; ignored on v3 | Use `[pause for 5 seconds]` |
+| Lines without blank lines between them | Get merged into one chunk — loses pacing, sounds rushed | Always separate lines with a blank line (press enter twice) |
+| Lines without a tone/pacing tag | Voice drifts to narrator register after a few chunks | Start every line with `[soft]`, `[gentle]`, `[slow]`, `[calm]`, etc. |
+| One giant paragraph of 4+ sentences | Far above the recommended line length; causes vocal drift | Break into separate lines with blank lines between them |
+| Stage directions like `(softly)` or `*pauses*` | The model speaks them aloud | Use `[soft]` or `[pause for X seconds]` |
 | `[whispers]` for an entire 15-minute meditation | Whispered TTS is fatiguing and unintelligible at length | Use `[soft]` as the default; `[whispers]` for short intimate beats |
 | Numbered lists ("1. Notice your breath. 2. …") | The model literally says "one, two" | Write as prose: *"First… notice your breath. Then…"* |
 | Acronyms and numbers ("Take a 4-7-8 breath") | Pronounced inconsistently | Spell out: *"Breathe in for four counts… hold for seven… release for eight."* |
 | `[shouts]`, `[angry]`, `[laughs]` | Wrong register for meditation | See "Tags to avoid" in Part 2 |
-| Excessive `…` (every line) | Sounds drugged or distracted | 3–4 per paragraph max |
+| Excessive `…` (every line) | Sounds drugged or distracted | 2–3 per line max |
 | ALL CAPS for whole sentences | Reads as shouting | Use sparingly for emphasis on 1–2 words |
+| Using the same tag for every single line | Monotonous; model may start ignoring it | Rotate through `[soft]`, `[gentle]`, `[slow]`, `[calm]`, `[very gentle]`, etc. |
+
+---
+
+## Part 7 — Quick formatting checklist
+
+Before pasting your script into the Mixer, verify:
+
+- [ ] Every line is separated by a blank line (double-enter)
+- [ ] Every line starts with a tone or pacing tag (`[soft]`, `[gentle]`, `[slow]`, etc.)
+- [ ] Tags are varied — rotate through at least 4–5 different tags
+- [ ] Pauses use `[pause for X seconds]` format only
+- [ ] Each line has 1–3 sentences (60–200 characters)
+- [ ] Ellipses (`…`) used for mid-sentence breaths, 2–3 per line max
+- [ ] No markdown, no SSML, no stage directions outside `[…]`
+- [ ] Total word count matches target duration (see Part 1, rule 11)
 
 ---
 

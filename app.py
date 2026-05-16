@@ -57,7 +57,7 @@ with st.sidebar:
         options=[v[0] for v in voices],
         format_func=lambda vid: next((label for vid_, label in voices if vid_ == vid), vid),
         help=(
-            "Curated top 5 v3 meditation voices. Serena is a stock voice and "
+            "Curated v3 meditation voices. Serena is a stock voice and "
             "always works; the others are voice-library voices — open each "
             "in elevenlabs.io/voice-library and click 'Add to my voices' "
             "before first use."
@@ -75,7 +75,7 @@ with st.sidebar:
     stability_preset = st.radio(
         "Stability preset",
         options=list(tts.STABILITY_PRESETS.keys()),
-        index=1,  # Natural
+        index=2,  # Meditative
         horizontal=True,
         help=(
             "Creative (0.30): most expressive, can drift on long sessions. "
@@ -84,10 +84,9 @@ with st.sidebar:
             "Robust (0.80): most stable but IGNORES [whispers]/[soft]/[breathes] tags."
         ),
     )
-    stability_default = tts.STABILITY_PRESETS[stability_preset]
-    stability = st.slider("Stability (fine-tune)", 0.0, 1.0, stability_default, 0.05,
-                          help="≥0.75 makes v3 ignore audio tags; ≤0.40 may drift. "
-                               "We recommend 0.50 (Natural) to maintain emotional warmth.")
+    stability = st.slider("Stability (fine-tune)", 0.0, 1.0, 0.50, 0.05,
+                          help="Locked to 0.50 (Meditative preset). ≥0.75 makes v3 ignore audio tags; "
+                               "≤0.40 may drift. 0.50 balances emotional warmth with stability.")
     similarity = st.slider("Similarity boost", 0.0, 1.0, 0.70, 0.01,
                            help=("0.70 is the optimal default — acts as the acoustic "
                                  "anchor that locks the voice timbre across chunks. "
@@ -163,7 +162,7 @@ with st.sidebar:
 
     st.divider()
     st.header("Mix")
-    bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, -11.0, 0.5)
+    bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, -13.0, 0.5)
     st.markdown("**Sidechain duck**")
     use_script_aware_duck = st.checkbox(
         "Script-aware (predictive + pause lift)",
@@ -177,9 +176,9 @@ with st.sidebar:
     )
     duck_range_db = st.slider("Duck range (dB)", -24.0, 0.0, -7.0, 0.5,
                               help="Maximum dip. -9 dB sounds like Calm/Headspace.")
-    duck_release_ms = st.slider("Duck release (ms)", 50.0, 2500.0, 1000.0, 25.0,
-                                help=("1000 ms aligns with research (§3.2) lower bound for languid, "
-                                      "cinematic music swell-back. 700 ms feels like 'breathing'; "
+    duck_release_ms = st.slider("Duck release (ms)", 50.0, 2500.0, 1200.0, 25.0,
+                                help=("1200 ms provides a gradual, natural swell-back. "
+                                      "700 ms feels like 'breathing'; "
                                       "1500–2000 ms for extra spacious mixes."))
     duck_lookahead_ms = st.slider("Duck look-ahead (ms)", 0.0, 30.0, 10.0, 1.0,
                                   help="Reactive detector look-ahead. Script-aware duck has its own 300 ms predictive descent.")
@@ -205,10 +204,10 @@ with st.sidebar:
 
     st.markdown("**Voice level**")
     voice_gain_db = st.slider(
-        "Voice gain (dB)", -12.0, 0.0, -1.5, 0.5,
-        help=("Attenuate the voice before summing with music. -1.5 dB slightly "
-              "tames the ElevenLabs output to a calm level. "
-              "Set to 0.0 to pass the voice through at full level."),
+        "Voice gain (dB)", -12.0, 0.0, -3.0, 0.5,
+        help=("Attenuate the voice before summing with music. -3.0 dB gently "
+              "pulls the vocals back to a calm, intimate level without "
+              "quality loss. Set to 0.0 for full level."),
     )
 
     st.markdown("**Voice processing (off by default — clean ElevenLabs output)**")
@@ -262,23 +261,24 @@ with left:
             "**Paste a script generated using `SCRIPT_GUIDE.md`.** "
             "Give that file to Claude/Gemini/etc. and paste the result here.\n\n"
             "**Quick rules:**\n"
-            "- Paragraphs (blank line between) become TTS chunks.\n"
-            "- `### PAUSE 5s` on its own line = exact silence (free, no API cost).\n"
-            "- Tone tags belong at the **start** of each paragraph: "
-            "`[soft]`, `[whispers]`, `[gently]`, `[calm]`, `[serene]`, `[warmly]`.\n"
+            "- **Blank line between every line** of text (press enter twice).\n"
+            "- **Every line starts with a tone/pacing tag:** "
+            "`[soft]`, `[gentle]`, `[slow]`, `[calm]`, `[very slow]`, `[warmly]`, `[whispers]`.\n"
+            "- `[pause for 5 seconds]` on its own line = exact silence (free, no API cost).\n"
+            "- Rotate tags every 2–3 lines to keep the voice calm and prevent drift.\n"
             "- Mid-line action tags: `[exhales]`, `[inhales]`, `[breathes]`, `[sighs]`, `[pauses]`.\n"
             "- Ellipses (`…`) = short hesitation pause. Em-dash (`—`) = stronger pause.\n"
-            "- Stability must be **Natural (0.50)** or lower for audio tags to work."
+            "- Stability at **0.50** or lower for audio tags to work."
         )
     lyrics = st.text_area(
         "Meditation script",
         height=320,
         placeholder=(
-            "[soft] Welcome.  Find a comfortable position…\n"
-            "and when you're ready, [breathes] gently close your eyes.\n\n"
-            "### PAUSE 5s\n\n"
-            "[whispers] Take a slow breath in… [inhales]\n"
-            "…and let it go. [exhales]"
+            "[soft] Welcome.  Find a comfortable position…\n\n"
+            "[gentle] And when you're ready, [breathes] gently close your eyes.\n\n"
+            "[pause for 5 seconds]\n\n"
+            "[calm] Take a slow breath in… [inhales]\n\n"
+            "[soft] …and let it go. [exhales]"
         ),
         label_visibility="collapsed",
     )

@@ -23,22 +23,14 @@ def _safe_name(name: str) -> str:
     return name or "upload.wav"
 
 
-def _dedupe(path: Path) -> Path:
-    if not path.exists():
-        return path
-    stem, suffix = path.stem, path.suffix
-    i = 2
-    while True:
-        candidate = path.with_name(f"{stem}_{i}{suffix}")
-        if not candidate.exists():
-            return candidate
-        i += 1
-
-
 def save_upload(filename: str, data: bytes) -> Path:
-    """Save uploaded file bytes to backgrounds/, returning the final path."""
+    """Save uploaded file bytes to backgrounds/, returning the final path.
+
+    If a file with the same name already exists it is overwritten so the
+    dropdown never accumulates numbered duplicates (_2, _3, …).
+    """
     BACKGROUNDS_DIR.mkdir(parents=True, exist_ok=True)
-    target = _dedupe(BACKGROUNDS_DIR / _safe_name(filename))
+    target = BACKGROUNDS_DIR / _safe_name(filename)
     target.write_bytes(data)
     return target
 
