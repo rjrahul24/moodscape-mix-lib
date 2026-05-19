@@ -151,6 +151,14 @@ MEDITATION_VOICES: list[Voice] = [
         voice_id="VhxAIIZM8IRmnl5fyeyk",
         name="Valory",
     ),
+    Voice(
+        voice_id="pjcYQlDFKMbcOUp6F5GD",
+        name="Brittney",
+    ),
+    Voice(
+        voice_id="BpjGufoPiobT79j2vtj4",
+        name="Priyanka",
+    ),
 ]
 
 
