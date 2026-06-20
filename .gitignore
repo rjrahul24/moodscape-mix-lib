@@ -1,5 +1,5 @@
 .env
-.claude/settings.local.json
+.claude/
 backgrounds/*
 !backgrounds/.gitkeep
 outputs/*
