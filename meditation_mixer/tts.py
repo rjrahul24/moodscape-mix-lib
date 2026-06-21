@@ -23,7 +23,9 @@ speed-ups and artifacts.
 from __future__ import annotations
 
 import io
+import logging
 import re
+import time
 import warnings
 from dataclasses import dataclass
 from typing import Literal
@@ -40,6 +42,8 @@ from .config import (
     ELEVENLABS_API_KEY,
     SAMPLE_RATE,
 )
+
+logger = logging.getLogger(__name__)
 
 # v3 seed range per the official API reference.
 SEED_MIN = 0
@@ -473,6 +477,28 @@ def _extract_request_id(headers: dict[str, str]) -> str | None:
     return None
 
 
+def _with_retries(fn, *, attempts=3, base_delay=1.0):
+    """Call fn(); retry transient failures with exponential backoff.
+
+    Re-raises client errors (HTTP 4xx) immediately — retrying won't help.
+    Treats 5xx and errors with no status_code (network/timeout) as transient.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 - we re-raise non-transient below
+            status = getattr(e, "status_code", None)
+            transient = status is None or status >= 500
+            if not transient or attempt >= attempts:
+                logger.error("ElevenLabs call failed (attempt %d/%d, status=%s): %s",
+                             attempt, attempts, status, e)
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            logger.warning("ElevenLabs transient failure (attempt %d/%d, status=%s); "
+                           "retrying in %.1fs", attempt, attempts, status, delay)
+            time.sleep(delay)
+
+
 def _render_one_chunk(
     text: str,
     voice_id: str,
@@ -547,17 +573,22 @@ def _render_one_chunk(
         api_kwargs["language_code"] = language_code
 
     # Use `with_raw_response` so we can read the response headers and pull
-    # the request_id for stitching the next chunk.
-    raw = _client().text_to_speech.with_raw_response
-    with raw.convert(**api_kwargs) as resp:
-        request_id = _extract_request_id(resp.headers)
-        buf = io.BytesIO()
-        for chunk in resp.data:
-            if chunk:
-                buf.write(chunk)
-    pcm = buf.getvalue()
-    if not pcm:
-        raise RuntimeError("ElevenLabs returned no audio data.")
+    # the request_id for stitching the next chunk. Wrapped in retry logic
+    # for transient network / 5xx failures only (cache-miss path).
+    def _do_api_call() -> tuple[bytes, str | None]:
+        raw = _client().text_to_speech.with_raw_response
+        with raw.convert(**api_kwargs) as resp:
+            rid = _extract_request_id(resp.headers)
+            with io.BytesIO() as buf:
+                for chunk in resp.data:
+                    if chunk:
+                        buf.write(chunk)
+                data = buf.getvalue()
+        if not data:
+            raise RuntimeError("ElevenLabs returned no audio data.")
+        return data, rid
+
+    pcm, request_id = _with_retries(_do_api_call)
     cache.store(payload, pcm)
     if request_id:
         _store_cached_request_id(payload, request_id)
@@ -655,6 +686,9 @@ def synthesize_script(
     speech_chunks = [c for c in parts if isinstance(c, SpeechChunk)]
     if not speech_chunks:
         raise ValueError("Script contains no speech, only pauses.")
+
+    logger.info("synthesize_script: %d total parts (%d speech, %d pause)",
+                len(parts), len(speech_chunks), len(parts) - len(speech_chunks))
 
     # Warn (not fail) on chunks that are too short — v3 needs context to
     # stabilize.
@@ -770,6 +804,10 @@ def synthesize_script(
         for kind, (s, e) in zip(piece_kinds, piece_spans)
         if kind == "speech" and e > s
     ]
+    logger.info("synthesize_script complete: cache_hits=%d, cache_misses=%d, "
+                "duration=%.1fs", cache_hits, cache_misses,
+                samples.shape[0] / SAMPLE_RATE)
+
     manifest = {
         "speech_chunks": len(speech_chunks),
         "pause_chunks": len(parts) - len(speech_chunks),

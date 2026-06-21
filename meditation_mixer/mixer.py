@@ -15,8 +15,11 @@ Stems        : voice / music / premaster written alongside the master so
 """
 from __future__ import annotations
 
+import gc
+import logging
 import shutil
 import subprocess
+import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +44,9 @@ from .config import (
     TARGET_LUFS,
     TRUE_PEAK_DB,
 )
+from .logging_setup import rss_mb
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -280,6 +286,35 @@ def render(
     phrase detection on the rendered voice — slightly less precise but
     still much better than reactive-only.
     """
+    _start_rss = rss_mb()
+    _start_time = _time.monotonic()
+    logger.info("render start — RSS=%.1f MB", _start_rss or 0.0)
+
+    try:
+        return _render_body(voice, sr, bg_path, settings, output_path,
+                            output_format, speech_segments)
+    except Exception:
+        logger.exception("render failed")
+        raise
+    finally:
+        gc.collect()
+        _elapsed = _time.monotonic() - _start_time
+        _end_rss = rss_mb()
+        _delta = ((_end_rss or 0.0) - (_start_rss or 0.0))
+        logger.info("render done — %.1fs, RSS=%.1f MB (delta %+.1f MB)",
+                    _elapsed, _end_rss or 0.0, _delta)
+
+
+def _render_body(
+    voice: np.ndarray,
+    sr: int,
+    bg_path: Path,
+    settings: MixSettings,
+    output_path: Path,
+    output_format: str,
+    speech_segments: list[tuple[float, float]] | None,
+) -> dict:
+    """Inner render logic — extracted so the caller wraps with gc.collect."""
     if voice.ndim != 1:
         voice = _to_mono(voice)
     voice = voice.astype(np.float32)
@@ -512,7 +547,7 @@ def render(
             "Consider a longer source for smoother seams."
         )
 
-    return {
+    result = {
         "output_path": str(output_path),
         "stems_dir": str(stems_dir) if settings.write_stems else None,
         "sample_rate": sr,
@@ -531,3 +566,9 @@ def render(
         "bg_fit_note": bg_fit_note,
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
+
+    # Free large intermediates before returning.
+    del voice_padded, bg, bg_fit, voice_fx, voice_mono, dry_stereo
+    del bg_fx, bg_ducked, voice_stereo, premaster, mastered
+
+    return result
