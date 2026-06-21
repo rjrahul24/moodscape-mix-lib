@@ -199,6 +199,20 @@ _SENTENCE_BOUNDARY_RE = re.compile(
 )
 
 
+def _ramp_factor(index: int, total: int, end_scale: float) -> float:
+    """Linear pause-length multiplier for chunk `index` of `total`.
+
+    Returns 1.0 at the first chunk and `end_scale` at the last, interpolating
+    linearly in between. When `end_scale == 1.0` the result is always exactly
+    1.0, so the meditation path is byte-for-byte unchanged. A single-chunk
+    script (total <= 1) also returns 1.0 (no division by zero).
+    """
+    if end_scale == 1.0 or total <= 1:
+        return 1.0
+    frac = index / (total - 1)
+    return 1.0 + (end_scale - 1.0) * frac
+
+
 def _inject_sentence_pauses(text: str) -> str:
     """Insert an ellipsis (…) between sentences that don't already have one.
 
@@ -586,6 +600,7 @@ def synthesize_script(
     normalize_chunk_lufs: float | None = -21.0,
     max_chunk_chars: int | None = None,
     inter_chunk_silence_ms: float = 300.0,
+    ramp_pause_end_scale: float = 1.0,
 ) -> tuple[np.ndarray, int, dict]:
     """Render a full meditation script.
 
@@ -615,6 +630,10 @@ def synthesize_script(
          `eleven_meditation_tts.py`'s `extra_pause_seconds` parameter.
          Gives a consistent, natural micro-pause between sentences that
          makes pacing feel unhurried without relying on long pauses.
+      5. Progressive pause ramp — when `ramp_pause_end_scale` > 1.0,
+         programmatic pause durations grow linearly from 1.0× (first
+         chunk) to `ramp_pause_end_scale`× (last chunk). 1.0 = off;
+         meditation default. Scales only silence, never the cache key.
 
     Pieces are then concatenated with equal-power crossfades.
 
@@ -655,12 +674,15 @@ def synthesize_script(
     recent_request_ids: list[str] = []
 
     for i, part in enumerate(parts):
+        factor = _ramp_factor(i, len(parts), ramp_pause_end_scale)
+
         if isinstance(part, PauseChunk):
-            n = int(round(part.seconds * SAMPLE_RATE))
+            seconds = part.seconds * factor
+            n = int(round(seconds * SAMPLE_RATE))
             pieces.append(np.zeros(n, dtype=np.float32))
             piece_kinds.append("pause")
             if progress:
-                progress(i + 1, len(parts), f"silence {part.seconds:.1f}s")
+                progress(i + 1, len(parts), f"silence {seconds:.1f}s")
             continue
 
         prev_t, next_t = ctx[speech_idx]
@@ -733,7 +755,8 @@ def synthesize_script(
         # silence after each speech chunk gives consistent, natural
         # micro-pauses between sentences.
         if inter_chunk_silence_ms > 0:
-            gap_n = int(round(SAMPLE_RATE * inter_chunk_silence_ms / 1000.0))
+            gap_ms = inter_chunk_silence_ms * factor
+            gap_n = int(round(SAMPLE_RATE * gap_ms / 1000.0))
             pieces.append(np.zeros(gap_n, dtype=np.float32))
             piece_kinds.append("pause")
 
