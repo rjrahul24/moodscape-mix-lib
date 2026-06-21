@@ -11,13 +11,13 @@ These are non-negotiable. The Mixer's parser depends on them.
 > A guided meditation *directs the listener's attention and nervous system* with frequent instructions and long, frequent pauses — the silence is where the work happens. A sleep story *gently distracts* — one continuous narrated story carries the listener toward sleep; the words themselves are the point, and pauses are minimal. Think of it as a warm, slow bedtime story for adults: soft, safe, unhurried, with almost no silence.
 >
 > Key contrasts:
-> - **Fewer and shorter pauses** — a 10-minute meditation might have 8–12 explicit pauses; a 10-minute sleep story should have only 3–5 short ones.
+> - **Fewer and shorter pauses** — we should add explicit pause tags after every 3 or 4 sentences, not after every sentence.
 > - **Longer continuous stretches of narration** — the voice flows smoothly with fewer hard stops.
 > - **Setting over instruction** — meditations say "notice your breath"; sleep stories say "the path curved gently through the meadow."
 > - **Same softness, less silence** — the vocal delivery is equally warm and unhurried, just with far less empty space.
 
 1. **Output is plain text only.** No markdown headings, no bullets, no preamble like *"Here is your script…"*, no closing remarks. Just the story, ready to paste.
-2. **Every line is separated by a blank line.** After each line of text, press enter **twice** to create a blank line before the next line. This is how the Mixer splits text into TTS chunks. Consecutive lines without a blank line between them get merged into a single chunk, which makes them sound rushed and reduces the calm pacing.
+2. **Every line is separated by a blank line.** After each line of text, press enter **twice** to create a blank line before the next line. This is how the Mixer splits text into TTS chunks. Consecutive lines without a blank line between them get merged into a single chunk, which makes them sound rushed and reduces the calm pacing. Make sure one sentence is never less than 150 characters.
 
    ✅ **Correct:**
    ```
@@ -58,9 +58,9 @@ These are non-negotiable. The Mixer's parser depends on them.
    - `.` (period) — sentence boundary, natural pause
    - `,` (comma) — slight in-line pause
 
-5. **Audio tags use square brackets**, lower-case, at the position where the effect should start. Examples: `[soft]`, `[whispers]`, `[exhales]`. Tags **never** appear inside another tag.
+5. **Audio tags use square brackets**, lower-case, at the position where the effect should start. Examples: `[soft]`, `[calm]`, `[gentle]`. Tags **never** appear inside another tag.
 
-6. **Every line starts with a tone or pacing tag.** The first token of each line must be a tone-setting or pacing tag like `[soft]`, `[calm]`, `[gentle]`, `[slow]`, `[very slow]`, `[serene]`, `[warmly]`, `[warm]`, or `[whispers]`. Tone and pacing tags fade within v3, so they **must be re-asserted on every line** to keep the voice slow, calm, and story-like throughout.
+6. **Every line starts with a tone or pacing tag.** The first token of each line must be a tone-setting or pacing tag like `[soft]`, `[calm]`, `[gentle]`, `[slow]`, `[very slow]`, `[serene]`, `[warmly]`, or `[warm]`. Tone and pacing tags fade within v3, so they **must be re-asserted on every line** to keep the voice slow, calm, and story-like throughout.
 
 7. **Re-assert pacing tags every 2–3 lines.** Even if you use the same tag consecutively, write it again. Vary the tags naturally (e.g. `[soft]` → `[warm]` → `[gentle]` → `[calm]` → `[serene]`). The goal is to **constantly remind the model to stay slow and soft**. Without frequent tag re-assertion, the voice drifts toward a faster, narrator-like register over time.
 
@@ -88,7 +88,7 @@ These are non-negotiable. The Mixer's parser depends on them.
    Each step was quiet, unhurried.
    ```
 
-8. **Per-line length: 1–2 sentences, 60–200 characters.** Keep each line short and focused — one image per line. This keeps the voice intimate and prevents the model from speeding up mid-chunk. Lines above 800 chars risk vocal drift.
+8. **Per-line length: 1–2 sentences, 100–300 characters.** Keep each line short and focused — one image per line. This keeps the voice intimate and prevents the model from speeding up mid-chunk. Lines above 800 chars risk vocal drift.
 
 9. **No `<break>` tags, no SSML, no `[long pause]` repeated multiple times.** Pauses go through `[pause for X seconds]` only. ElevenLabs explicitly warns that `<break>` and repeated pause tags cause speed-ups and audio artifacts.
 
@@ -122,16 +122,6 @@ These tags control the voice's emotional register and pacing. **Rotate through t
 
 **Recommended rotation for a 10-minute sleep story:**
 `[warm]` → `[soft]` → `[gentle]` → `[calm]` → `[serene]` → `[soft]` → `[gentle]` → `[slow]` → `[very gentle]` → `[soft]` → `[very slow]` → `[whispers]`
-
-### Breath / body (use sparingly, to open a paragraph)
-
-| Tag | What it produces |
-|---|---|
-| `[exhales]` | Audible out-breath. Use to open a paragraph for a beat of naturalness. |
-| `[sighs]` | A relaxed, slow sigh. Strong at the start of a paragraph to signal settling. |
-| `[yawns]` | A real yawn. Use once or twice near the end to mirror the listener's drowsiness. |
-
-For sleep stories, breath tags should be **rare** — perhaps 2–3 in the whole story, usually to open a new paragraph. Unlike meditation, breath is not cued; it just adds warmth.
 
 ### Pause / pacing (only inside a line; for >2 s use `[pause for]`)
 
@@ -218,14 +208,14 @@ This is what makes delivery slow. Target **~110 spoken words per minute** — sl
 
 ## Part 5 — Pauses (fewer and shorter than meditation)
 
-Sleep stories use **far fewer explicit pauses** than meditations. The continuous flow of narration is what lulls the listener — silence wakes the mind.
+Sleep stories use **fewer explicit pauses** than meditations. The continuous flow of narration is what lulls the listener, silence is helpful but not all the time.
 
 ### Guidelines
 
-- Use `[pause for 1 second]` or `[pause for 2 seconds]` only at **genuine scene shifts** — when the story moves to a new location or a new phase of the calm arc.
-- **Do NOT pause after most lines.** The blank line between lines already provides a natural prosody reset.
+- Use `[pause for 2 second]` or `[pause for 3 seconds]` only at **genuine scene shifts** — when the story moves to a new location or a new phase of the calm arc.
+- **Do NOT pause after every line.** The blank line between lines already provides a natural prosody reset.
 - **Rely on commas, `…`, and ` — ` for soft in-line breathing** instead of explicit pause lines.
-- A 10-minute sleep story should have roughly **3–5 explicit pauses**, each 1–2 seconds.
+- In the script, add **explicit pauses**, only after every 3-5 lines, not after every line.
 
 ### Important: the app handles the wind-down for you
 
@@ -269,13 +259,15 @@ Below is a short excerpt (12 lines) in the exact app syntax. Note: short sentenc
 
 [gentle] The light was low now… amber, soft, fading.
 
-[calm] You leaned against the window, the glass cool against your temple.
+[pause for 3 seconds]
 
-[pause for 2 seconds]
+[calm] You leaned against the window, the glass cool against your temple.
 
 [serene] The train crossed a stone bridge over a river.
 
 [soft] The water below was dark and still, catching the last colour of the sky.
+
+[pause for 3 seconds]
 
 [gentle] On the far bank, a row of trees stood motionless… their reflections perfect.
 
@@ -321,10 +313,9 @@ Before pasting your script into the Mixer, verify:
 - [ ] Every line starts with a tone or pacing tag (`[soft]`, `[gentle]`, `[slow]`, etc.)
 - [ ] Tags are varied — rotate through at least 4–5 different tags
 - [ ] Pauses use `[pause for X seconds]` format only
-- [ ] Pauses are short (1–2 seconds) and infrequent (3–5 per 10 minutes)
 - [ ] No long explicit pauses (the app's wind-down ramp handles deepening)
-- [ ] Each line has 1–2 sentences (60–200 characters), one image per line
-- [ ] Sentences are short (5–20 words) with no run-on compound structures
+- [ ] Each line has 1–2 sentences (100–300 characters), one image per line
+- [ ] Sentences are short (5–25 words) with no run-on compound structures
 - [ ] Ellipses (`…`) used for mid-sentence breaths, 2–3 per line max
 - [ ] No markdown, no SSML, no stage directions outside `[…]`
 - [ ] No dialogue, no questions to the listener, no tension or conflict
@@ -332,9 +323,3 @@ Before pasting your script into the Mixer, verify:
 - [ ] Total word count matches target duration (~110 WPM; 10 min ≈ 1,100 words)
 
 ---
-
-## Part 10 — Example prompt to give the LLM
-
-Following the rules above precisely, write me a **10-minute sleep story** about **a quiet evening train journey through the countryside**. Use a **warm, soft, unhurried** tone. The listener is a passenger gazing out the window as the landscape slowly darkens. Follow the progressive calm arc: the first third notices details of the passing scenery, the middle third settles as the train slows, and the final third trails off into drowsy fragments. Target ~1,100 spoken words. Output plain text only, ready to paste — no preamble, no markdown, no commentary.
-
-*(Customize the topic in bold; the LLM will generate a story matching your sleep-story rules.)*
