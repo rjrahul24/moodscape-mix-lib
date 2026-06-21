@@ -38,8 +38,8 @@ class TestMeditationPreset:
         assert MEDITATION.label == "Meditation"
 
     def test_meditation_guide_file(self):
-        """MEDITATION.guide_file == 'MEDITATION_GUIDE.md'."""
-        assert MEDITATION.guide_file == "MEDITATION_GUIDE.md"
+        """MEDITATION.guide_file == 'docs/MEDITATION_GUIDE.md'."""
+        assert MEDITATION.guide_file == "docs/MEDITATION_GUIDE.md"
 
     def test_meditation_render_prefix(self):
         """MEDITATION.render_prefix == 'meditation'."""
@@ -112,8 +112,8 @@ class TestSleepStoryPreset:
         assert SLEEP_STORY.label == "Sleep Story"
 
     def test_sleep_story_guide_file(self):
-        """SLEEP_STORY.guide_file == 'SLEEP_STORY_GUIDE.md'."""
-        assert SLEEP_STORY.guide_file == "SLEEP_STORY_GUIDE.md"
+        """SLEEP_STORY.guide_file == 'docs/SLEEP_STORY_GUIDE.md'."""
+        assert SLEEP_STORY.guide_file == "docs/SLEEP_STORY_GUIDE.md"
 
     def test_sleep_story_render_prefix(self):
         """SLEEP_STORY.render_prefix == 'sleep_story'."""
@@ -186,12 +186,12 @@ class TestGuideFilesAndPrefixes:
 
     def test_meditation_guide_and_prefix(self):
         """MEDITATION guide and prefix are documented strings."""
-        assert MEDITATION.guide_file == "MEDITATION_GUIDE.md"
+        assert MEDITATION.guide_file == "docs/MEDITATION_GUIDE.md"
         assert MEDITATION.render_prefix == "meditation"
 
     def test_sleep_story_guide_and_prefix(self):
         """SLEEP_STORY guide and prefix are documented strings."""
-        assert SLEEP_STORY.guide_file == "SLEEP_STORY_GUIDE.md"
+        assert SLEEP_STORY.guide_file == "docs/SLEEP_STORY_GUIDE.md"
         assert SLEEP_STORY.render_prefix == "sleep_story"
 
 

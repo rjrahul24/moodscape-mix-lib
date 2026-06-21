@@ -1,6 +1,6 @@
 """Parse a meditation script into a sequence of TTS chunks and programmatic pauses.
 
-Script format (matches `MEDITATION_GUIDE.md`):
+Script format (matches `docs/MEDITATION_GUIDE.md`):
 
     [soft] Welcome.  Find a comfortable position…
 
@@ -46,7 +46,7 @@ _INLINE_PAUSE_RE = re.compile(
 # --- Markdown stripping (safety net) -------------------------------- #
 # TTS models interpret markdown symbols as literal text or timing cues,
 # resulting in robotic beats and vocalised bullet characters. The
-# MEDITATION_GUIDE already tells users to write plain text, but this
+# docs/MEDITATION_GUIDE already tells users to write plain text, but this
 # catches any formatting that slips through.  `### PAUSE` lines are
 # explicitly preserved since that is our own pause-marker syntax.
 

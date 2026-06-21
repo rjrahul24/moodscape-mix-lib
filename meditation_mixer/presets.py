@@ -75,7 +75,7 @@ class ContentPreset:
 MEDITATION = ContentPreset(
     key="meditation",
     label="Meditation",
-    guide_file="MEDITATION_GUIDE.md",
+    guide_file="docs/MEDITATION_GUIDE.md",
     render_prefix="meditation",
     pause_scale=2.0,
     tone_preset="[soft][slowly]",
@@ -102,7 +102,7 @@ MEDITATION = ContentPreset(
 SLEEP_STORY = ContentPreset(
     key="sleep_story",
     label="Sleep Story",
-    guide_file="SLEEP_STORY_GUIDE.md",
+    guide_file="docs/SLEEP_STORY_GUIDE.md",
     render_prefix="sleep_story",
     pause_scale=1.1,
     tone_preset="[calm][soft]",

@@ -1,6 +1,6 @@
 # Meditation Audio Mixer
 
-Headspace-grade meditation audio from a script. **ElevenLabs v3** for narration (with audio tags like `[whispers]`, `[breathes]`, `[soft]`), **Pedalboard** + **scipy.signal** for a studio mix chain, and a strict LUFS verification gate before export.
+Headspace-grade meditation and sleep story audio from a script. **ElevenLabs v3** for narration (with audio tags like `[whispers]`, `[breathes]`, `[soft]`), **Pedalboard** + **scipy.signal** for a studio mix chain, and a strict LUFS verification gate before export. Supports two content types — Meditation (spacious pacing, frequent pauses) and Sleep Story (continuous narration, progressive wind-down).
 
 ## Quick start
 
@@ -36,9 +36,9 @@ Audio tags work with v3 only. The v2 fallback ignores them — use longer punctu
 ## Pipeline
 
 ```
-ElevenLabs v3 (PCM 48 kHz mono, chunked at ~4.4k chars with prev/next_text+seed,
-               disk-cached by content hash, tone preset `[soft][slowly]`
-               reasserted at every chunk that lacks a leading [tag])
+ElevenLabs v3 (PCM 48 kHz mono, chunked at ~800 chars (1600 for sleep stories),
+               disk-cached by SHA256 content hash, tone preset reasserted
+               at every chunk boundary that lacks a leading [tag])
         ↓
 Per chunk: pyloudnorm to -19 LUFS  → Rubber Band R3 time-stretch ×1.18
            (preserve_formants=True, smooth transients, long FFT window)
@@ -65,7 +65,7 @@ Master: HPF 30 → glue Compressor → +1 dB shelf @ 12 kHz →
         LUFS normalize to -16 → 4× oversampled true-peak Limiter
         at -1 dBTP → TPDF dither for 16-bit WAV
         ↓
-Verification gate: LUFS ±0.5 / TP ≤ -1.0 dBTP / LRA 5-18 LU /
+Verification gate: LUFS ±0.5 / TP ≤ -1.0 dBTP / LRA 3-24 LU /
                    |mono-sum delta| ≤ 3 LU
         ↓
 WAV/MP3 master + voice/music/premaster stems in outputs/
@@ -86,7 +86,7 @@ For premium reverb IRs (drop into `irs/`): the [OpenAIR library](https://www.ope
 app.py                       Streamlit UI
 meditation_mixer/
   config.py                  Paths, env, targets (48k, -16 LUFS, -1 dBTP)
-  tts.py                     v3 wrapper with chunking, prev/next/seed, cache
+  tts.py                     v3 wrapper with chunking, cache, crossfade stitch
   chunker.py                 Script → speech + pause chunks
   cache.py                   Content-addressed disk cache for TTS PCM
   library.py                 Background file management
@@ -96,6 +96,10 @@ meditation_mixer/
   deess.py                   Split-band Linkwitz-Riley de-esser
   mastering.py               4× true-peak limiter, dither, M/S width, verify
   mixer.py                   End-to-end pipeline + stem export
+  presets.py                 Content type presets (Meditation, Sleep Story)
+  logging_setup.py           Logger + memory monitoring
+docs/                        LLM script-writing guides + design specs
+tests/                       pytest test suite
 backgrounds/                 Your royalty-free sources (gitignored)
 irs/                         Impulse responses (synthetic plate auto-generated)
 outputs/                     Master + stems (gitignored)
@@ -109,7 +113,7 @@ outputs/                     Master + stems (gitignored)
 | Sample rate (internal) | 48 kHz float32 | Headroom for reverb/EQ, matches v3 output |
 | Integrated LUFS | −16.0 ± 0.5 | Apple Podcasts target; correct on earbuds and headphones |
 | True peak | ≤ −1.0 dBTP | Safe through AAC/MP3 intersample peaks |
-| LRA | 6–9 LU (4–10 acceptable) | Keeps breath dynamics audible, not crushed |
+| LRA | 3–24 LU | Wide for spoken word with intentional dynamics |
 | Delivery | 16-bit WAV (dithered) or MP3 | WAV for archive, MP3 for sharing |
 | Stems | voice / music / premaster | Re-mix or re-master without re-paying for TTS |
 ```
