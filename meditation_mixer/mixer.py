@@ -15,6 +15,8 @@ Stems        : voice / music / premaster written alongside the master so
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -214,6 +216,47 @@ def _to_stereo(audio: np.ndarray) -> np.ndarray:
         return audio
     mono = audio.mean(axis=0)
     return np.stack([mono, mono], axis=0)
+
+
+def wav_to_m4a(wav_path: Path, m4a_path: Path, *, sample_rate: int = 48000) -> Path:
+    """Convert a WAV file to M4A (AAC-LC) optimised for iOS playback.
+
+    Uses Apple AudioToolbox encoder when available (macOS), falling back to
+    FFmpeg's built-in AAC encoder on other platforms.  Settings target the
+    sweet-spot for iPhone: AAC-LC @ 256 kbps VBR, 48 kHz, stereo.
+    """
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            "ffmpeg is required for M4A conversion but was not found on PATH. "
+            "Install it with: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)."
+        )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(wav_path),
+        "-c:a", "aac_at" if _has_aac_at() else "aac",
+        "-b:a", "256k",
+        "-ar", str(sample_rate),
+        "-ac", "2",
+        "-movflags", "+faststart",
+        str(m4a_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg M4A conversion failed:\n{result.stderr}")
+    return m4a_path
+
+
+def _has_aac_at() -> bool:
+    """Check if Apple AudioToolbox AAC encoder is available."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-encoders"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return "aac_at" in result.stdout
+    except Exception:
+        return False
 
 
 def render(

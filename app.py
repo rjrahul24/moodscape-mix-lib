@@ -20,7 +20,7 @@ from meditation_mixer.config import (
     TARGET_LUFS,
     TRUE_PEAK_DB,
 )
-from meditation_mixer.mixer import MixSettings, render
+from meditation_mixer.mixer import MixSettings, render, wav_to_m4a
 
 st.set_page_config(page_title="Meditation Mixer", page_icon="🧘", layout="wide")
 st.title("Meditation Audio Mixer")
@@ -69,7 +69,7 @@ with st.sidebar:
         index=0,
         help="v3 supports audio tags ([whispers], [breathes], [soft]). v2 is the stable fallback.",
     )
-    output_format = st.selectbox("Output format", ["wav", "mp3"], index=0)
+    output_format = st.selectbox("Output format", ["m4a", "wav", "mp3"], index=0)
 
     st.subheader("Voice settings")
     stability_preset = st.radio(
@@ -359,7 +359,8 @@ if render_clicked:
     )
 
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = OUTPUTS_DIR / f"meditation_{timestamp}.{output_format}"
+    render_format = "wav" if output_format == "m4a" else output_format
+    out_path = OUTPUTS_DIR / f"meditation_{timestamp}.{render_format}"
 
     progress = st.progress(0, text="Preparing…")
     try:
@@ -386,9 +387,16 @@ if render_clicked:
 
         manifest = render(
             voice, sr, bg_path, settings, out_path,
-            output_format=output_format,
+            output_format=render_format,
             speech_segments=tts_manifest.get("speech_segments"),
         )
+
+        if output_format == "m4a":
+            progress.progress(95, text="Converting to M4A…")
+            m4a_path = out_path.with_suffix(".m4a")
+            wav_to_m4a(out_path, m4a_path, sample_rate=sr)
+            out_path = m4a_path
+
         progress.progress(100, text="Done.")
     except Exception as e:
         progress.empty()
@@ -437,11 +445,12 @@ if render_clicked:
 
     with open(out_path, "rb") as f:
         audio_bytes = f.read()
-    st.audio(audio_bytes, format=f"audio/{output_format}")
+    mime_type = "audio/mp4" if output_format == "m4a" else f"audio/{output_format}"
+    st.audio(audio_bytes, format=mime_type)
     st.download_button(
         "Download",
         data=audio_bytes,
         file_name=out_path.name,
-        mime=f"audio/{output_format}",
+        mime=mime_type,
         use_container_width=True,
     )
