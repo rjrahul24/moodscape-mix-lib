@@ -222,7 +222,7 @@ Sleep stories use **far fewer explicit pauses** than meditations. The continuous
 
 ### Guidelines
 
-- Use `[pause for 1 seconds]` or `[pause for 2 seconds]` only at **genuine scene shifts** — when the story moves to a new location or a new phase of the calm arc.
+- Use `[pause for 1 second]` or `[pause for 2 seconds]` only at **genuine scene shifts** — when the story moves to a new location or a new phase of the calm arc.
 - **Do NOT pause after most lines.** The blank line between lines already provides a natural prosody reset.
 - **Rely on commas, `…`, and ` — ` for soft in-line breathing** instead of explicit pause lines.
 - A 10-minute sleep story should have roughly **3–5 explicit pauses**, each 1–2 seconds.
@@ -234,7 +234,7 @@ The app automatically **lengthens pauses gradually toward the end** of the story
 ### What the system does automatically (you don't need to)
 
 1. **API speed = 0.80** — the slowest clean setting before v3 starts warping vowels.
-2. **`[slowly]` tag injected on every chunk** — even if your line starts with `[calm]` or `[whispers]`, the system auto-appends `[slowly]` for pacing. You do NOT need to write `[slowly]` yourself (but adding `[slow]` or `[very slow]` gives extra emphasis).
+2. **`[calm][soft]` tone preset re-asserted at chunk boundaries** — the system automatically prepends `[calm][soft]` to any chunk that doesn't already start with a tag, keeping the voice consistently soft and grounded. You do NOT need to write this prefix yourself (but using `[slow]` or `[very slow]` gives extra emphasis).
 3. **Inter-sentence pause injection** — the system automatically inserts a soft ellipsis pause (`…`) between sentences that don't already have one.
 4. **Progressive pause ramp** — pause durations are automatically lengthened toward the end of the story, deepening the wind-down without script changes.
 
@@ -333,4 +333,8 @@ Before pasting your script into the Mixer, verify:
 
 ---
 
+## Part 10 — Example prompt to give the LLM
+
 Following the rules above precisely, write me a **10-minute sleep story** about **a quiet evening train journey through the countryside**. Use a **warm, soft, unhurried** tone. The listener is a passenger gazing out the window as the landscape slowly darkens. Follow the progressive calm arc: the first third notices details of the passing scenery, the middle third settles as the train slows, and the final third trails off into drowsy fragments. Target ~1,100 spoken words. Output plain text only, ready to paste — no preamble, no markdown, no commentary.
+
+*(Customize the topic in bold; the LLM will generate a story matching your sleep-story rules.)*
