@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import gc
+import logging
 import traceback
 from pathlib import Path
 
@@ -20,7 +22,9 @@ from meditation_mixer.config import (
     TARGET_LUFS,
     TRUE_PEAK_DB,
 )
+from meditation_mixer.logging_setup import setup_logging
 from meditation_mixer.mixer import MixSettings, render, wav_to_m4a
+from meditation_mixer.presets import PRESETS
 
 st.set_page_config(page_title="Meditation Mixer", page_icon="🧘", layout="wide")
 st.title("Meditation Audio Mixer")
@@ -37,6 +41,9 @@ if not ELEVENLABS_API_KEY:
     )
     st.stop()
 
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 @st.cache_data(ttl=600, show_spinner="Loading voices…")
 def cached_voices() -> list[tuple[str, str]]:
@@ -45,6 +52,11 @@ def cached_voices() -> list[tuple[str, str]]:
 
 # ---------------- Sidebar ---------------- #
 with st.sidebar:
+    content_type = st.selectbox("Content type", list(PRESETS.keys()), index=0,
+                                help="Meditation: frequent pauses, breathing-led. "
+                                     "Sleep Story: continuous narration, fewer pauses, softer bed.")
+    preset = PRESETS[content_type]
+
     st.header("Voice")
     try:
         voices = cached_voices()
@@ -84,7 +96,8 @@ with st.sidebar:
             "Robust (0.80): most stable but IGNORES [whispers]/[soft]/[breathes] tags."
         ),
     )
-    stability = st.slider("Stability (fine-tune)", 0.0, 1.0, 0.50, 0.05,
+    stability = st.slider("Stability (fine-tune)", 0.0, 1.0, preset.stability, 0.05,
+                          key=f"stability_{preset.key}",
                           help="Locked to 0.50 (Meditative preset). ≥0.75 makes v3 ignore audio tags; "
                                "≤0.40 may drift. 0.50 balances emotional warmth with stability.")
     similarity = st.slider("Similarity boost", 0.0, 1.0, 0.70, 0.01,
@@ -101,7 +114,8 @@ with st.sidebar:
                             "tag injection, inter-sentence pauses, and pause_scale. "
                             "Together these deliver ~80–100 WPM (matching Headspace/Calm). "
                             "Above 0.90 the voice drifts to narrator register."))
-    pause_scale = st.slider("Pause scale", 0.5, 3.0, 2.0, 0.05,
+    pause_scale = st.slider("Pause scale", 0.5, 3.0, preset.pause_scale, 0.05,
+                            key=f"pause_scale_{preset.key}",
                             help="Increased to 2.0 to give much slower, spacious pacing.")
     seed = st.number_input(
         "Seed", min_value=tts.SEED_MIN, max_value=tts.SEED_MAX,
@@ -112,7 +126,8 @@ with st.sidebar:
     with st.expander("Advanced TTS"):
         tone_preset = st.text_input(
             "Tone preset (prepended at chunk boundaries)",
-            value=tts.DEFAULT_TONE_PRESET,
+            value=preset.tone_preset,
+            key=f"tone_preset_{preset.key}",
             help=("Audio tag(s) to prepend at the START of every speech chunk that "
                   "doesn't already begin with a `[tag]`. v3 has no server-side "
                   "stitching, so this is the only continuity tool you have. Set to "
@@ -157,12 +172,13 @@ with st.sidebar:
         max_chunk_chars = (
             CHUNK_MAX_CHARS_EXTENDED
             if chunking_strategy.startswith("Extended")
-            else None  # None = use the default from config
+            else preset.max_chunk_chars  # None for meditation (=> chunker default 800), 1600 for sleep
         )
 
     st.divider()
     st.header("Mix")
-    bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, -13.0, 0.5)
+    bg_gain_db = st.slider("Background gain (dB)", -30.0, 0.0, preset.bg_gain_db, 0.5,
+                           key=f"bg_gain_db_{preset.key}")
     st.markdown("**Sidechain duck**")
     use_script_aware_duck = st.checkbox(
         "Script-aware (predictive + pause lift)",
@@ -174,15 +190,18 @@ with st.sidebar:
               "as a safety net for off-script audio. Makes the bed 'breathe' "
               "with the voice."),
     )
-    duck_range_db = st.slider("Duck range (dB)", -24.0, 0.0, -7.0, 0.5,
+    duck_range_db = st.slider("Duck range (dB)", -24.0, 0.0, preset.duck_range_db, 0.5,
+                              key=f"duck_range_db_{preset.key}",
                               help="Maximum dip. -9 dB sounds like Calm/Headspace.")
-    duck_release_ms = st.slider("Duck release (ms)", 50.0, 2500.0, 1200.0, 25.0,
+    duck_release_ms = st.slider("Duck release (ms)", 50.0, 2500.0, preset.duck_release_ms, 25.0,
+                                key=f"duck_release_ms_{preset.key}",
                                 help=("1200 ms provides a gradual, natural swell-back. "
                                       "700 ms feels like 'breathing'; "
                                       "1500–2000 ms for extra spacious mixes."))
     duck_lookahead_ms = st.slider("Duck look-ahead (ms)", 0.0, 30.0, 10.0, 1.0,
                                   help="Reactive detector look-ahead. Script-aware duck has its own 300 ms predictive descent.")
-    duck_lift_db = st.slider("Pause lift (dB)", 0.0, 4.0, 2.0, 0.25,
+    duck_lift_db = st.slider("Pause lift (dB)", 0.0, 4.0, preset.duck_lift_db, 0.25,
+                             key=f"duck_lift_db_{preset.key}",
                              help="Music lift during pauses ≥ 1.5 s. +1.5 dB is conservative; >+3 dB starts to sound like 'rising' rather than 'breathing'.")
 
     st.markdown("**Music pocket EQ (static)**")
@@ -258,7 +277,7 @@ with left:
     st.subheader("Script")
     with st.expander("Format & audio tag reference"):
         st.markdown(
-            "**Paste a script generated using `SCRIPT_GUIDE.md`.** "
+            f"**Paste a script generated using `{preset.guide_file}`.** "
             "Give that file to Claude/Gemini/etc. and paste the result here.\n\n"
             "**Quick rules:**\n"
             "- **Blank line between every line** of text (press enter twice).\n"
@@ -271,15 +290,9 @@ with left:
             "- Stability at **0.50** or lower for audio tags to work."
         )
     lyrics = st.text_area(
-        "Meditation script",
+        f"{preset.label} script",
         height=320,
-        placeholder=(
-            "[soft] Welcome.  Find a comfortable position…\n\n"
-            "[gentle] And when you're ready, [breathes] gently close your eyes.\n\n"
-            "[pause for 5 seconds]\n\n"
-            "[calm] Take a slow breath in… [inhales]\n\n"
-            "[soft] …and let it go. [exhales]"
-        ),
+        placeholder=preset.placeholder,
         label_visibility="collapsed",
     )
 
@@ -322,7 +335,7 @@ with right:
 
 st.divider()
 disabled = not (lyrics.strip() and voice_id and bg_path is not None)
-render_clicked = st.button("Render meditation", type="primary", disabled=disabled,
+render_clicked = st.button(f"Render {preset.label.lower()}", type="primary", disabled=disabled,
                            use_container_width=True)
 
 if render_clicked:
@@ -360,9 +373,10 @@ if render_clicked:
 
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     render_format = "wav" if output_format == "m4a" else output_format
-    out_path = OUTPUTS_DIR / f"meditation_{timestamp}.{render_format}"
+    out_path = OUTPUTS_DIR / f"{preset.render_prefix}_{timestamp}.{render_format}"
 
     progress = st.progress(0, text="Preparing…")
+    logger.info("render start: content_type=%s", content_type)
     try:
         def tts_progress(i, total, msg):
             pct = int(5 + 60 * (i / max(total, 1)))
@@ -382,6 +396,8 @@ if render_clicked:
             time_stretch_factor=float(time_stretch_factor),
             normalize_chunk_lufs=chunk_lufs_target,
             max_chunk_chars=max_chunk_chars,
+            inter_chunk_silence_ms=preset.inter_chunk_silence_ms,
+            ramp_pause_end_scale=preset.ramp_pause_end_scale,
         )
         progress.progress(70, text="Mixing voice + background…")
 
@@ -399,10 +415,13 @@ if render_clicked:
 
         progress.progress(100, text="Done.")
     except Exception as e:
+        logger.exception("render failed")
         progress.empty()
         st.error(f"Render failed: {e}")
         st.code(traceback.format_exc())
         st.stop()
+    finally:
+        gc.collect()
 
     tts_warnings = tts_manifest.get("warnings") or []
     if stability >= 0.75 and "[" in lyrics:
